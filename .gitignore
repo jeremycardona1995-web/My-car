@@ -1,0 +1,6 @@
+# Aucune donnée personnelle dans ce dépôt : il est public.
+# Les sauvegardes exportées depuis l'application restent sur le téléphone.
+carnet-*.json
+donnees-*.json
+*.csv
+.DS_Store

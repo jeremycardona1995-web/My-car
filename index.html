@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0d0f14">
+<meta name="color-scheme" content="dark">
+<meta name="description" content="Carnet d'entretien automobile hors ligne">
+<title>Carnet</title>
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="icon" href="./icone-192.png">
+<link rel="apple-touch-icon" href="./icone-192.png">
+<link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+
+<div class="appli">
+
+  <!-- ───────────────────────── Aujourd'hui ───────────────────────── -->
+  <main id="vueAujourdhui" class="vue">
+    <header class="entete">
+      <p class="entete-vehicule" id="enteteVehicule">Ta voiture</p>
+      <p class="compteur"><span id="compteurValeur">—</span><span class="compteur-unite">km</span></p>
+      <p class="entete-detail" id="compteurDetail">Aucun relevé enregistré</p>
+    </header>
+
+    <section id="blocRetard" hidden>
+      <h2 class="titre-section titre-danger">En retard</h2>
+      <div id="listeRetard" class="pile"></div>
+    </section>
+
+    <section id="blocBientot" hidden>
+      <h2 class="titre-section">Bientôt</h2>
+      <div id="listeBientot" class="pile"></div>
+    </section>
+
+    <section id="blocAJour" hidden>
+      <button class="repli" id="repliAJour" aria-expanded="false" aria-controls="listeAJour">
+        <span id="repliAJourTexte">À jour</span>
+        <svg class="chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+      </button>
+      <div id="listeAJour" class="pile" hidden></div>
+    </section>
+
+    <section id="blocInconnu" hidden>
+      <button class="repli" id="repliInconnu" aria-expanded="false" aria-controls="listeInconnu">
+        <span id="repliInconnuTexte">Jamais renseignés</span>
+        <svg class="chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+      </button>
+      <div id="listeInconnu" class="pile" hidden></div>
+    </section>
+
+    <div class="carte accueil" id="accueil" hidden>
+      <p class="accueil-titre">Bienvenue</p>
+      <p class="accueil-texte">Commence par relever ton compteur avec le bouton en bas à droite,
+        puis note ce que tu as déjà fait dans le carnet. L'application calcule le reste.</p>
+      <button class="feuille-bouton principal" id="btnTuto" type="button">Comment ça marche</button>
+    </div>
+  </main>
+
+  <!-- ───────────────────────────── Carnet ───────────────────────────── -->
+  <main id="vueCarnet" class="vue" hidden>
+    <header class="entete entete-compacte">
+      <h1 class="titre-vue">Carnet</h1>
+      <p class="entete-detail" id="carnetResume">—</p>
+    </header>
+
+    <div class="filtres" id="filtres" role="tablist"></div>
+    <div id="listeCarnet"></div>
+    <p class="vide" id="videCarnet" hidden>Aucune intervention. Appuie sur + pour en ajouter une.</p>
+  </main>
+
+  <!-- ───────────────────────────── Voiture ───────────────────────────── -->
+  <main id="vueVoiture" class="vue" hidden>
+    <header class="entete entete-compacte">
+      <h1 class="titre-vue">Voiture</h1>
+      <p class="entete-detail">Fiche, dépenses et sauvegarde</p>
+    </header>
+
+    <button class="carte carte-action" id="ouvrirFiche">
+      <span class="carte-action-texte">
+        <span class="carte-action-titre" id="ficheTitre">Renseigner le véhicule</span>
+        <span class="carte-action-detail" id="ficheDetail">Marque, modèle, immatriculation</span>
+      </span>
+      <svg class="chevron chevron-droite" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+    </button>
+
+    <h2 class="titre-section">Kilométrage</h2>
+    <div class="carte carte-graphe"><div id="grapheKm"></div></div>
+
+    <h2 class="titre-section">Dépenses par an</h2>
+    <div class="carte carte-graphe"><div id="grapheCout"></div></div>
+    <p class="note" id="noteCout"></p>
+
+    <h2 class="titre-section">Postes suivis</h2>
+    <div class="carte" id="listeRegles"></div>
+
+    <h2 class="titre-section">Sauvegarde</h2>
+    <div class="carte">
+      <button class="ligne ligne-bouton" id="btnExport">
+        <span>Exporter mes données</span><span class="ligne-detail">JSON</span>
+      </button>
+      <button class="ligne ligne-bouton" id="btnExportCsv">
+        <span>Exporter le carnet</span><span class="ligne-detail">CSV</span>
+      </button>
+      <button class="ligne ligne-bouton" id="btnImport">
+        <span>Importer une sauvegarde</span>
+      </button>
+      <button class="ligne ligne-bouton" id="btnTuto2">
+        <span>Revoir le mode d'emploi</span>
+      </button>
+      <button class="ligne ligne-bouton ligne-danger" id="btnEffacer">
+        <span>Tout effacer</span>
+      </button>
+    </div>
+    <p class="note">Tes données restent sur ce téléphone. Rien n'est envoyé, nulle part.
+      Exporte de temps en temps : c'est la seule sauvegarde qui survit à tout.</p>
+    <p class="note note-version" id="noteVersion"></p>
+    <input type="file" id="fichierImport" accept="application/json,.json" hidden>
+  </main>
+
+  <!-- ───────────────────────────── Bouton flottant ───────────────────────────── -->
+  <button class="fab" id="fab" aria-label="Ajouter">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+  </button>
+
+  <!-- ───────────────────────────── Navigation ───────────────────────────── -->
+  <nav class="nav" id="nav">
+    <button class="nav-bouton actif" data-vue="Aujourdhui" aria-current="page">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l2.5 2"/></svg>
+      <span>Aujourd'hui</span>
+    </button>
+    <button class="nav-bouton" data-vue="Carnet">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h11l3 3v13H5z"/><path d="M8 10h8M8 14h5"/></svg>
+      <span>Carnet</span>
+    </button>
+    <button class="nav-bouton" data-vue="Voiture">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 15h16v-3l-2-5H6l-2 5z"/><circle cx="8" cy="17" r="1.6"/><circle cx="16" cy="17" r="1.6"/></svg>
+      <span>Voiture</span>
+    </button>
+  </nav>
+
+</div>
+
+<!-- ───────────────────────────── Feuilles ───────────────────────────── -->
+<dialog class="feuille" id="feuilleGenerique">
+  <div class="poignee" aria-hidden="true"></div>
+  <div id="feuilleContenu"></div>
+</dialog>
+
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+<script src="./app.js"></script>
+</body>
+</html>
