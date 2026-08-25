@@ -309,3 +309,33 @@ dialog.feuille[open] { animation: monte 220ms cubic-bezier(.22,.8,.3,1); }
   dialog.feuille { padding-top: 4px; }
   .poignee { margin-bottom: 10px; }
 }
+
+/* ─────────────── Pneus ─────────────── */
+.carte-vehicule { padding: 16px 10px 10px; }
+.carte-vehicule svg { display: block; width: 100%; max-width: 360px; margin: 0 auto; height: auto; }
+
+.silhouette { fill: #1c212b; stroke: #313847; stroke-width: 1.5; }
+.vitre { fill: #262d39; }
+.pneu-zone { cursor: pointer; }
+.pneu-forme { fill: #10131a; stroke: var(--attenue); stroke-width: 2.5; rx: 5; }
+.pneu-zone.ok .pneu-forme { stroke: var(--ok); }
+.pneu-zone.proche .pneu-forme { stroke: var(--accent); }
+.pneu-zone.retard .pneu-forme { stroke: var(--danger); }
+.pneu-zone:active .pneu-forme { fill: var(--surface-2); }
+.pneu-valeur { fill: var(--texte); font-size: 13px; font-weight: 600; }
+.pneu-sous { fill: var(--attenue); font-size: 11px; }
+.pneu-etiquette { fill: var(--attenue); font-size: 10px; letter-spacing: .08em; }
+
+.bouton-large { margin: 16px 0 0; }
+
+.pneu-ligne { display: flex; align-items: center; gap: 12px; padding: 13px 16px; }
+.pneu-ligne + .pneu-ligne { box-shadow: inset 0 1px 0 var(--bordure); }
+.pneu-ligne-nom { flex: none; width: 44px; font-size: 13px; font-weight: 650; color: var(--attenue); letter-spacing: .05em; }
+.pneu-ligne-corps { flex: 1; min-width: 0; }
+.pneu-ligne-titre { display: block; font-size: 15.5px; }
+.pneu-ligne-detail { display: block; margin-top: 2px; font-size: 13px; color: var(--attenue); }
+
+.barre-usure { height: 6px; border-radius: 3px; background: var(--bordure); overflow: hidden; margin-top: 7px; }
+.barre-usure span { display: block; height: 100%; border-radius: 3px; background: var(--ok); }
+.barre-usure.proche span { background: var(--accent); }
+.barre-usure.retard span { background: var(--danger); }

@@ -4,7 +4,7 @@
 
 'use strict';
 
-const VERSION_APPLI = '1.0.0';
+const VERSION_APPLI = '1.1.0';
 const VERSION_FORMAT = 1;
 const CLES = {
   vehicule: 'vehiculeV1',
@@ -12,6 +12,7 @@ const CLES = {
   interventions: 'interventionsV1',
   regles: 'reglesV1',
   reglages: 'reglagesV1',
+  pneus: 'pneusV1',
 };
 
 const CATEGORIES = [
@@ -20,6 +21,7 @@ const CATEGORIES = [
   { cle: 'depannage', libelle: 'Dépannage',          couleur: '#c084fc' },
   { cle: 'sinistre',  libelle: 'Sinistre',           couleur: '#ef4444' },
   { cle: 'ct',        libelle: 'Contrôle technique', couleur: '#6ee7a8' },
+  { cle: 'panne',     libelle: 'Panne',              couleur: '#fb7185' },
 ];
 
 /* Postes suivis. `cle` est l'identifiant stable : le libellé peut changer
@@ -32,8 +34,8 @@ const REGLES_PAR_DEFAUT = [
   { cle: 'filtre_carb',    libelle: 'Filtre à carburant',              intervalleKm: 60000,  intervalleMois: 48 },
   { cle: 'liquide_frein',  libelle: 'Liquide de frein',                intervalleKm: 0,      intervalleMois: 24 },
   { cle: 'liquide_refr',   libelle: 'Liquide de refroidissement',      intervalleKm: 0,      intervalleMois: 60 },
-  { cle: 'freins',         libelle: 'Plaquettes et disques',           intervalleKm: 0,      intervalleMois: 6, controle: true },
-  { cle: 'pneus',          libelle: 'Usure et pression des pneus',     intervalleKm: 0,      intervalleMois: 6, controle: true },
+  { cle: 'freins',         libelle: 'Plaquettes et disques',           intervalleKm: 0,      intervalleMois: 0, auBesoin: true },
+  { cle: 'pneus',          libelle: 'Pneus',                           intervalleKm: 0,      intervalleMois: 0, auBesoin: true },
   { cle: 'distribution',   libelle: 'Distribution + pompe à eau',      intervalleKm: 180000, intervalleMois: 120 },
   { cle: 'courroie_acc',   libelle: "Courroie d'accessoires",          intervalleKm: 120000, intervalleMois: 72 },
   { cle: 'clim',           libelle: 'Climatisation',                   intervalleKm: 0,      intervalleMois: 36 },
@@ -70,6 +72,7 @@ let etat = {
   interventions: [],
   regles: [],
   reglages: {},
+  pneus: [],          // relevés de pression et d'usure, un par pneu et par date
 };
 
 function chargerEtat() {
@@ -78,7 +81,27 @@ function chargerEtat() {
   etat.interventions = lire(CLES.interventions, []);
   etat.regles = lire(CLES.regles, []);
   etat.reglages = lire(CLES.reglages, {});
+  etat.pneus = lire(CLES.pneus, []);
   fusionnerRegles();
+  migrerPostesAuBesoin();
+}
+
+/* Plaquettes et pneus se changent quand ils sont usés, pas à date fixe.
+   On ne touche qu'aux réglages restés exactement à l'ancienne valeur par
+   défaut : un intervalle modifié à la main est conservé tel quel. */
+function migrerPostesAuBesoin() {
+  if (etat.reglages.migrationAuBesoin) return;
+  for (const r of etat.regles) {
+    if ((r.cle === 'freins' || r.cle === 'pneus') && r.intervalleKm === 0 && r.intervalleMois === 6) {
+      r.intervalleMois = 0;
+      r.auBesoin = true;
+      delete r.controle;
+      if (r.cle === 'pneus' && r.libelle === 'Usure et pression des pneus') r.libelle = 'Pneus';
+    }
+  }
+  etat.reglages.migrationAuBesoin = true;
+  enregistrer('regles');
+  enregistrer('reglages');
 }
 
 /* Ajoute les postes manquants sans écraser ceux que l'utilisateur a réglés.
@@ -94,7 +117,7 @@ function fusionnerRegles() {
       libelle: modele.libelle,
       intervalleKm: modele.intervalleKm,
       intervalleMois: modele.intervalleMois,
-      controle: !!modele.controle,
+      auBesoin: !!modele.auBesoin,
       actif: true,
     });
     change = true;
@@ -108,6 +131,7 @@ function enregistrer(quoi) {
   if (quoi === 'interventions') ecrire(CLES.interventions, etat.interventions);
   if (quoi === 'regles') ecrire(CLES.regles, etat.regles);
   if (quoi === 'reglages') ecrire(CLES.reglages, etat.reglages);
+  if (quoi === 'pneus') ecrire(CLES.pneus, etat.pneus);
 }
 
 function identifiant() {
@@ -238,7 +262,7 @@ function dernierFait(cleRegle) {
   let trouve = null;
   for (const i of etat.interventions) {
     if (!i || !Array.isArray(i.postes) || !i.postes.includes(cleRegle)) continue;
-    if (!trouve || i.date > trouve.date) trouve = i;
+    if (!trouve || i.date >= trouve.date) trouve = i;
   }
   if (!trouve) return null;
   return { date: trouve.date, km: trouve.km > 0 ? Number(trouve.km) : null };
@@ -252,7 +276,7 @@ function calculerEcheances() {
   const resultat = [];
 
   for (const regle of etat.regles) {
-    if (!regle || regle.actif === false) continue;
+    if (!regle || regle.actif === false || regle.auBesoin) continue;
     const fait = dernierFait(regle.cle);
     const e = {
       regle,
@@ -308,7 +332,7 @@ function rangStatut(e) {
 }
 
 function texteEcheance(e) {
-  const verbe = e.regle.controle ? 'À contrôler' : '';
+  const verbe = '';
   if (e.statut === 'retard') {
     const parts = [];
     if (e.resteKm !== null && e.resteKm <= 0) parts.push(nombreKm(-e.resteKm) + ' km');
@@ -321,6 +345,60 @@ function texteEcheance(e) {
   const suite = bouts.length ? bouts.join(' ou ') : 'pas de limite définie';
   return (verbe ? verbe + ' ' : '') + suite;
 }
+
+
+/* ─────────────── Pneus ─────────────── */
+
+const POSITIONS = [
+  { cle: 'avg', nom: 'AVG', libelle: 'Avant gauche', essieu: 'av' },
+  { cle: 'avd', nom: 'AVD', libelle: 'Avant droit',  essieu: 'av' },
+  { cle: 'arg', nom: 'ARG', libelle: 'Arrière gauche', essieu: 'ar' },
+  { cle: 'ard', nom: 'ARD', libelle: 'Arrière droit',  essieu: 'ar' },
+];
+
+const USURE_NEUF = 8;      // mm de gomme sur un pneu neuf
+const USURE_LIMITE = 1.6;  // limite légale
+const PRESSION_DEFAUT = 2.4;
+
+function pressionCible(essieu) {
+  const v = Number(etat.reglages[essieu === 'av' ? 'pressionAv' : 'pressionAr']);
+  return v > 0 ? v : PRESSION_DEFAUT;
+}
+
+function dernierPneu(cle) {
+  let trouve = null;
+  for (const p of etat.pneus) {
+    if (!p || p.position !== cle) continue;
+    if (!trouve || p.date >= trouve.date) trouve = p;   // à date égale, la dernière saisie gagne
+  }
+  return trouve;
+}
+
+/* État d'un pneu : la plus mauvaise des deux mesures l'emporte. */
+function etatPneu(position) {
+  const dernier = dernierPneu(position.cle);
+  const resultat = { position, dernier, statut: 'inconnu', pression: null, usure: null, ecart: null };
+  if (!dernier) return resultat;
+
+  resultat.pression = Number(dernier.pression) || null;
+  resultat.usure = Number(dernier.usure) || null;
+  let rang = 0;  // 0 correct, 1 à surveiller, 2 anormal
+
+  if (resultat.pression) {
+    resultat.ecart = resultat.pression - pressionCible(position.essieu);
+    if (resultat.ecart <= -0.3) rang = 2;
+    else if (resultat.ecart <= -0.15 || resultat.ecart >= 0.3) rang = Math.max(rang, 1);
+  }
+  if (resultat.usure) {
+    if (resultat.usure <= USURE_LIMITE) rang = 2;
+    else if (resultat.usure <= 3) rang = Math.max(rang, 1);
+  }
+  resultat.statut = (resultat.pression || resultat.usure)
+    ? ['ok', 'proche', 'retard'][rang]
+    : 'inconnu';
+  return resultat;
+}
+
 
 /* ─────────────── Fabrique d'éléments ─────────────── */
 
@@ -389,7 +467,8 @@ function rendreAujourdhui() {
     $('#compteurDetail').textContent = 'relevé le ' + dateCourte(actuel.source.date);
   }
 
-  const echeances = calculerEcheances();
+  rendrePannes();
+  const echeances = calculerEcheances().concat(alertesPneus());
   const retard = echeances.filter(e => e.statut === 'retard');
   const proche = echeances.filter(e => e.statut === 'proche');
   const ajour = echeances.filter(e => e.statut === 'ajour');
@@ -407,6 +486,34 @@ function rendreAujourdhui() {
 
   // L'accueil ne s'affiche que tant qu'il n'y a rien à montrer.
   $('#accueil').hidden = etat.interventions.length > 0 || etat.releves.length > 0;
+}
+
+/* Une panne reste visible en tête tant qu'elle n'est pas déclarée résolue. */
+function pannesOuvertes() {
+  return etat.interventions
+    .filter(i => i && i.categorie === 'panne' && !i.resolueLe)
+    .sort((a, b) => a.date < b.date ? 1 : -1);
+}
+
+function rendrePannes() {
+  const liste = $('#listePannes');
+  liste.textContent = '';
+  const ouvertes = pannesOuvertes();
+  for (const i of ouvertes) {
+    const jours = Math.round((aujourdhui().getTime() - versDate(i.date).getTime()) / JOUR);
+    liste.appendChild(el('button', {
+      classe: 'echeance-corps carte', type: 'button',
+      sur: { click: () => ouvrirDetailIntervention(i.id) },
+    }, [
+      el('span', { classe: 'pastille', style: 'background:' + categorie('panne').couleur }),
+      el('span', { classe: 'echeance-texte' }, [
+        el('span', { classe: 'echeance-titre', texte: i.titre || 'Panne' }),
+        el('span', { classe: 'echeance-etat retard',
+          texte: 'signalée ' + (jours <= 0 ? "aujourd'hui" : 'il y a ' + dureeLisible(jours)) }),
+      ]),
+    ]));
+  }
+  $('#blocPannes').hidden = ouvertes.length === 0;
 }
 
 function remplir(selListe, selBloc, echeances) {
@@ -432,7 +539,7 @@ function carteEcheance(e) {
   const corps = el('button', {
     classe: 'echeance-corps',
     type: 'button',
-    sur: { click: () => ouvrirEcheance(e) },
+    sur: { click: () => (e.action ? e.action() : ouvrirEcheance(e)) },
   }, [
     jauge,
     el('span', { classe: 'echeance-texte' }, [
@@ -443,7 +550,7 @@ function carteEcheance(e) {
 
   enveloppe.appendChild(fond);
   enveloppe.appendChild(corps);
-  brancherGlissement(enveloppe, corps, fond, e);
+  if (!e.action) brancherGlissement(enveloppe, corps, fond, e);
   return enveloppe;
 }
 
@@ -476,9 +583,9 @@ function rendreCarnet() {
   const toutes = etat.interventions.slice().sort((a, b) => a.date < b.date ? 1 : a.date > b.date ? -1 : 0);
   const visibles = filtreActif === 'tout' ? toutes : toutes.filter(i => i.categorie === filtreActif);
 
-  const total = toutes.reduce((s, i) => s + (Number(i.resteACharge) || 0), 0);
+  const total = toutes.reduce((s, i) => s + (Number(i.coutTotal) || 0), 0);
   $('#carnetResume').textContent = toutes.length
-    ? toutes.length + ' interventions · ' + euros(total) + ' à ma charge'
+    ? toutes.length + ' interventions · ' + euros(total) + ' investis'
     : 'Rien pour l\'instant';
 
   $('#videCarnet').hidden = visibles.length > 0;
@@ -490,7 +597,7 @@ function rendreCarnet() {
       anneeCourante = annee;
       const totalAnnee = visibles
         .filter(x => (x.date || '').slice(0, 4) === annee)
-        .reduce((s, x) => s + (Number(x.resteACharge) || 0), 0);
+        .reduce((s, x) => s + (Number(x.coutTotal) || 0), 0);
       zone.appendChild(el('h2', { classe: 'annee' }, [
         el('span', { texte: annee || '—' }),
         el('span', { classe: 'annee-total', texte: totalAnnee ? euros(totalAnnee) : '' }),
@@ -505,8 +612,8 @@ function carteIntervention(i) {
   const bas = [dateCourte(i.date), cat.libelle, i.km > 0 ? nombreKm(i.km) + ' km' : null, i.lieu || null]
     .filter(Boolean).join(' · ');
 
-  const cout = Number(i.resteACharge) || 0;
   const facture = Number(i.coutTotal) || 0;
+  const charge = Number(i.resteACharge) || 0;
 
   return el('button', {
     classe: 'evenement', type: 'button',
@@ -517,11 +624,313 @@ function carteIntervention(i) {
       el('span', { classe: 'evenement-titre', texte: i.titre || cat.libelle }),
       el('span', { classe: 'evenement-detail', texte: bas }),
     ]),
-    (cout || facture) ? el('span', { classe: 'evenement-cout' }, [
-      document.createTextNode(euros(cout)),
-      facture > cout ? el('small', { texte: 'sur ' + euros(facture) }) : null,
+    facture ? el('span', { classe: 'evenement-cout' }, [
+      document.createTextNode(euros(facture)),
+      charge < facture ? el('small', { texte: 'dont ' + euros(charge) + ' pour moi' }) : null,
     ]) : null,
   ]);
+}
+
+/* ─────────────── Vue : Pneus ─────────────── */
+
+function nombreDecimal(n, unite) {
+  if (n === null || n === undefined || !isFinite(n)) return '—';
+  return String(Math.round(n * 100) / 100).replace('.', ',') + (unite || '');
+}
+
+/* 2 bar se lit mal à côté de 2,4 : une pression garde toujours sa décimale. */
+function pressionTexte(n, unite) {
+  if (n === null || n === undefined || !isFinite(n)) return '—';
+  return n.toFixed(1).replace('.', ',') + (unite || '');
+}
+
+function rendrePneus() {
+  const etats = POSITIONS.map(etatPneu);
+  rendreSchemaPneus(etats);
+  rendreHistoriquePneus(etats);
+
+  const renseignes = etats.filter(e => e.statut !== 'inconnu').length;
+  const anormaux = etats.filter(e => e.statut === 'retard').length;
+  const surveiller = etats.filter(e => e.statut === 'proche').length;
+  $('#pneusResume').textContent = renseignes === 0
+    ? 'Appuie sur un pneu pour le renseigner'
+    : anormaux ? anormaux + (anormaux > 1 ? ' pneus anormaux' : ' pneu anormal')
+    : surveiller ? surveiller + ' à surveiller'
+    : 'Les quatre sont corrects';
+
+  $('#detailPressionsCible').textContent =
+    'AV ' + pressionTexte(pressionCible('av')) + ' · AR ' + pressionTexte(pressionCible('ar'), ' bar');
+}
+
+function rendreSchemaPneus(etats) {
+  const zone = $('#schemaPneus');
+  zone.textContent = '';
+  const L = 300, H = 300;
+
+  // Les valeurs se lisent à l'extérieur de la carrosserie : au centre, les
+  // colonnes gauche et droite se chevauchaient.
+  const places = {
+    avg: { x: 74, y: 84, gauche: true },
+    avd: { x: 208, y: 84, gauche: false },
+    arg: { x: 74, y: 188, gauche: true },
+    ard: { x: 208, y: 188, gauche: false },
+  };
+
+  const enfants = [
+    svgEl('text', { classe: 'pneu-etiquette', x: L / 2, y: 12, 'text-anchor': 'middle', texte: 'AVANT' }),
+    svgEl('rect', { classe: 'silhouette', x: 96, y: 22, width: 108, height: 262, rx: 32 }),
+    svgEl('rect', { classe: 'vitre', x: 112, y: 60, width: 76, height: 30, rx: 11 }),
+    svgEl('rect', { classe: 'vitre', x: 112, y: 216, width: 76, height: 26, rx: 10 }),
+  ];
+
+  for (const e of etats) {
+    const p = places[e.position.cle];
+    const ancreX = p.gauche ? 64 : 236;
+    const ancre = p.gauche ? 'end' : 'start';
+    const groupe = svgEl('g', { classe: 'pneu-zone ' + e.statut, role: 'button',
+      'aria-label': e.position.libelle });
+
+    groupe.appendChild(svgEl('rect', {
+      x: p.gauche ? 0 : 200, y: p.y - 18, width: 100, height: 76, fill: 'transparent',
+    }));
+    groupe.appendChild(svgEl('rect', { classe: 'pneu-forme', x: p.x, y: p.y, width: 18, height: 44, rx: 5 }));
+    groupe.appendChild(svgEl('text', { classe: 'pneu-etiquette', x: ancreX, y: p.y + 4,
+      'text-anchor': ancre, texte: e.position.nom }));
+    groupe.appendChild(svgEl('text', { classe: 'pneu-valeur', x: ancreX, y: p.y + 24,
+      'text-anchor': ancre, texte: e.pression ? pressionTexte(e.pression, ' bar') : '— bar' }));
+    groupe.appendChild(svgEl('text', { classe: 'pneu-sous', x: ancreX, y: p.y + 41,
+      'text-anchor': ancre, texte: e.usure ? nombreDecimal(e.usure, ' mm') : 'usure ?' }));
+
+    groupe.addEventListener('click', () => ouvrirPneu(e.position));
+    enfants.push(groupe);
+  }
+
+  zone.appendChild(svgEl('svg', { viewBox: '0 0 ' + L + ' ' + H, role: 'img',
+    'aria-label': 'Les quatre pneus vus du dessus' }, enfants));
+}
+
+function rendreHistoriquePneus(etats) {
+  const zone = $('#historiquePneus');
+  zone.textContent = '';
+  if (!etat.pneus.length) {
+    zone.appendChild(el('p', { classe: 'vide', texte: 'Aucun relevé pour l’instant.' }));
+    return;
+  }
+
+  const carte = el('div', { classe: 'carte' });
+  for (const e of etats) {
+    const usure = e.usure;
+    const part = usure ? Math.max(0, Math.min(1, (usure - USURE_LIMITE) / (USURE_NEUF - USURE_LIMITE))) : 0;
+    const detail = e.dernier
+      ? ['relevé le ' + dateCourte(e.dernier.date),
+         e.ecart !== null ? (Math.abs(e.ecart) < 0.05 ? 'à la bonne pression'
+           : (e.ecart < 0 ? pressionTexte(-e.ecart, ' bar') + ' en dessous' : pressionTexte(e.ecart, ' bar') + ' au-dessus')) : null,
+        ].filter(Boolean).join(' · ')
+      : 'jamais renseigné';
+
+    carte.appendChild(el('button', {
+      classe: 'pneu-ligne', type: 'button', sur: { click: () => ouvrirPneu(e.position) },
+    }, [
+      el('span', { classe: 'pneu-ligne-nom', texte: e.position.nom }),
+      el('span', { classe: 'pneu-ligne-corps' }, [
+        el('span', { classe: 'pneu-ligne-titre',
+          texte: (e.pression ? pressionTexte(e.pression, ' bar') : '— bar')
+            + ' · ' + (usure ? nombreDecimal(usure, ' mm') : 'usure inconnue') }),
+        el('span', { classe: 'pneu-ligne-detail', texte: detail }),
+        usure ? el('span', { classe: 'barre-usure ' + (e.statut === 'inconnu' ? '' : e.statut) }, [
+          el('span', { style: 'width:' + (part * 100).toFixed(0) + '%' }),
+        ]) : null,
+      ]),
+    ]));
+  }
+  zone.appendChild(carte);
+
+  const nb = etat.pneus.length;
+  zone.appendChild(el('p', { classe: 'note', texte: nb + (nb > 1 ? ' relevés enregistrés' : ' relevé enregistré')
+    + '. Un pneu neuf fait 8 mm de gomme, la limite légale est à 1,6 mm.' }));
+}
+
+function ouvrirPneu(position) {
+  const dernier = dernierPneu(position.cle);
+  const cible = pressionCible(position.essieu);
+
+  const cPression = champ('pPression', 'Pression (bar)', {
+    type: 'text', inputmode: 'decimal', autocomplete: 'off',
+    placeholder: pressionTexte(cible),
+    value: dernier && dernier.pression ? pressionTexte(dernier.pression) : '',
+  }, 'Recommandée : ' + pressionTexte(cible, ' bar') + ', à froid');
+
+  const cUsure = champ('pUsure', 'Gomme restante (mm)', {
+    type: 'text', inputmode: 'decimal', autocomplete: 'off', placeholder: '5',
+    value: dernier && dernier.usure ? nombreDecimal(dernier.usure) : '',
+  }, 'Facultatif. Neuf : 8 mm. Limite légale : 1,6 mm.');
+
+  const cDate = champ('pDate', 'Date', { type: 'date', value: versIso(aujourdhui()) });
+
+  const valider = () => {
+    const pression = nombreSaisi(cPression.entree.value);
+    const usure = nombreSaisi(cUsure.entree.value);
+    if (!pression && !usure) { toast('Saisis au moins une valeur'); return; }
+    if (pression && (pression < 0.5 || pression > 5)) { toast('Pression peu vraisemblable'); return; }
+    if (usure && (usure < 0 || usure > 12)) { toast('Usure peu vraisemblable'); return; }
+
+    etat.pneus.push({
+      id: identifiant(),
+      date: cDate.entree.value || versIso(aujourdhui()),
+      position: position.cle,
+      pression: pression || null,
+      usure: usure || null,
+      km: kilometrageActuel().km,
+    });
+    enregistrer('pneus');
+    fermerFeuille();
+    rendreTout();
+    vibrer(15);
+    toast(position.nom + ' enregistré');
+  };
+
+  const contenu = [cPression.bloc, cUsure.bloc, cDate.bloc,
+    bouton('Enregistrer', { principal: true, action: valider })];
+
+  const passes = etat.pneus.filter(p => p.position === position.cle)
+    .sort((a, b) => a.date < b.date ? 1 : -1).slice(0, 6);
+  if (passes.length > 1) {
+    contenu.push(el('h3', { classe: 'titre-section', texte: 'Relevés précédents' }));
+    contenu.push(el('ul', { classe: 'detail-liste' }, passes.map(p => el('li', null, [
+      el('span', { texte: dateCourte(p.date) }),
+      el('span', { texte: [p.pression ? pressionTexte(p.pression, ' bar') : null,
+        p.usure ? nombreDecimal(p.usure, ' mm') : null].filter(Boolean).join(' · ') }),
+    ]))));
+  }
+
+  ouvrirFeuille(position.libelle, dernier ? 'Dernier relevé le ' + dateCourte(dernier.date) : 'Jamais renseigné', contenu);
+}
+
+function nombreSaisi(valeur) {
+  const n = parseFloat(String(valeur).replace(',', '.').replace(/[^\d.]/g, ''));
+  return isNaN(n) ? 0 : n;
+}
+
+/* Le gonflage se fait aux quatre pneus d'affilée : autant les saisir d'un coup. */
+function ouvrirQuatrePressions() {
+  const champs = POSITIONS.map(p => {
+    const dernier = dernierPneu(p.cle);
+    return {
+      position: p,
+      c: champ('q-' + p.cle, p.nom, {
+        type: 'text', inputmode: 'decimal', autocomplete: 'off',
+        placeholder: pressionTexte(pressionCible(p.essieu)),
+        value: dernier && dernier.pression ? pressionTexte(dernier.pression) : '',
+      }),
+    };
+  });
+
+  const valider = () => {
+    const date = versIso(aujourdhui());
+    let compte = 0;
+    for (const { position, c } of champs) {
+      const pression = nombreSaisi(c.entree.value);
+      if (!pression) continue;
+      if (pression < 0.5 || pression > 5) { toast(position.nom + ' : pression peu vraisemblable'); return; }
+      const dernier = dernierPneu(position.cle);
+      etat.pneus.push({
+        id: identifiant(), date, position: position.cle, pression,
+        usure: dernier ? dernier.usure : null,   // l'usure ne change pas en gonflant
+        km: kilometrageActuel().km,
+      });
+      compte++;
+    }
+    if (!compte) { toast('Aucune pression saisie'); return; }
+    enregistrer('pneus');
+    fermerFeuille();
+    rendreTout();
+    vibrer(15);
+    toast(compte + (compte > 1 ? ' pressions enregistrées' : ' pression enregistrée'));
+  };
+
+  ouvrirFeuille('Pressions du jour', 'À froid, avant de rouler.', [
+    el('div', { classe: 'champ-duo' }, [champs[0].c.bloc, champs[1].c.bloc]),
+    el('div', { classe: 'champ-duo' }, [champs[2].c.bloc, champs[3].c.bloc]),
+    bouton('Enregistrer', { principal: true, action: valider }),
+  ]);
+}
+
+function ouvrirPressionsCible() {
+  const cAv = champ('cAv', 'Avant (bar)', { type: 'text', inputmode: 'decimal',
+    value: pressionTexte(pressionCible('av')) });
+  const cAr = champ('cAr', 'Arrière (bar)', { type: 'text', inputmode: 'decimal',
+    value: pressionTexte(pressionCible('ar')) });
+
+  ouvrirFeuille('Pressions recommandées', 'Relève-les sur l’étiquette de la portière conducteur.', [
+    el('div', { classe: 'champ-duo' }, [cAv.bloc, cAr.bloc]),
+    bouton('Enregistrer', {
+      principal: true,
+      action: () => {
+        const av = nombreSaisi(cAv.entree.value), ar = nombreSaisi(cAr.entree.value);
+        if (av < 1 || av > 4 || ar < 1 || ar > 4) { toast('Valeurs peu vraisemblables'); return; }
+        etat.reglages.pressionAv = av;
+        etat.reglages.pressionAr = ar;
+        enregistrer('reglages');
+        fermerFeuille();
+        rendreTout();
+        toast('Pressions enregistrées');
+      },
+    }),
+  ]);
+}
+
+/* Les pneus produisent leurs propres alertes, sans passer par une règle
+   périodique : ce qui compte est la mesure, pas la date du dernier contrôle. */
+function alertesPneus() {
+  const etats = POSITIONS.map(etatPneu);
+  const alertes = [];
+  const versPneus = () => allerA('Pneus');
+
+  const gonflage = etats.filter(e => e.ecart !== null && e.ecart <= -0.15)
+    .sort((a, b) => a.ecart - b.ecart);
+  if (gonflage.length) {
+    const pire = gonflage[0];
+    alertes.push({
+      regle: { cle: 'pneu_pression', libelle: gonflage.length > 1 ? 'Pneus sous-gonflés' : 'Pneu sous-gonflé' },
+      statut: pire.ecart <= -0.3 ? 'retard' : 'proche',
+      fraction: 1,
+      texte: pire.position.nom + ' à ' + pressionTexte(pire.pression, ' bar')
+        + ' au lieu de ' + pressionTexte(pressionCible(pire.position.essieu)),
+      action: versPneus,
+    });
+  }
+
+  const uses = etats.filter(e => e.usure && e.usure <= 3).sort((a, b) => a.usure - b.usure);
+  if (uses.length) {
+    const pire = uses[0];
+    alertes.push({
+      regle: { cle: 'pneu_usure', libelle: 'Usure des pneus' },
+      statut: pire.usure <= USURE_LIMITE ? 'retard' : 'proche',
+      fraction: 1,
+      texte: pire.position.nom + ' à ' + nombreDecimal(pire.usure, ' mm')
+        + ' — limite légale ' + nombreDecimal(USURE_LIMITE, ' mm'),
+      action: versPneus,
+    });
+  }
+
+  const dates = etat.pneus.map(p => p.date).filter(Boolean).sort();
+  const dernier = dates.length ? dates[dates.length - 1] : null;
+  const jours = dernier ? (aujourdhui().getTime() - versDate(dernier).getTime()) / JOUR : null;
+  if (!dernier) {
+    alertes.push({
+      regle: { cle: 'pneu_controle', libelle: 'Pression des pneus' },
+      statut: 'inconnu', fraction: 0,
+      texte: 'Jamais relevée', action: versPneus,
+    });
+  } else if (jours > 60 && !gonflage.length) {
+    alertes.push({
+      regle: { cle: 'pneu_controle', libelle: 'Pression des pneus' },
+      statut: jours > 120 ? 'retard' : 'proche',
+      fraction: Math.min(1, jours / 60),
+      texte: 'Dernier relevé il y a ' + dureeLisible(jours), action: versPneus,
+    });
+  }
+  return alertes;
 }
 
 /* ─────────────── Vue : Voiture ─────────────── */
@@ -614,8 +1023,8 @@ function rendreGrapheCout() {
 
   const totalGeneral = annees.reduce((s, a) => s + parAnnee.get(a).total, 0);
   const chargeGenerale = annees.reduce((s, a) => s + parAnnee.get(a).charge, 0);
-  $('#noteCout').textContent = 'Barre pleine : ce que tu as payé (' + euros(chargeGenerale)
-    + '). Barre sombre : montant total facturé (' + euros(totalGeneral) + '), assurance comprise.';
+  $('#noteCout').textContent = 'Barre sombre : total investi dans la voiture (' + euros(totalGeneral)
+    + '). Barre pleine : ce qui est sorti de ta poche (' + euros(chargeGenerale) + '), hors part d\'assurance.';
 }
 
 function rendreListeRegles() {
@@ -678,7 +1087,7 @@ function ouvrirEcheance(e) {
     : 'Aucune trace dans le carnet.';
 
   ouvrirFeuille(e.regle.libelle, dernier + (e.fait ? ' — ' + e.texte : ''), [
-    bouton(e.regle.controle ? 'Contrôlé, c\'est bon' : 'C\'est fait', {
+    bouton('C\'est fait', {
       principal: true,
       action: () => { fermerFeuille(); ouvrirIntervention(null, e.regle); },
     }),
@@ -815,6 +1224,7 @@ function ouvrirIntervention(idExistant, reglePrecochee) {
       lieu: cLieu.entree.value.trim(),
       notes: cNotes.entree.value.trim(),
       postes: [...postesChoisis],
+      resolueLe: existant ? (existant.resolueLe || null) : null,
     };
 
     if (existant) {
@@ -871,14 +1281,37 @@ function ouvrirDetailIntervention(id) {
     (i.resteACharge || i.coutTotal) ? el('li', null, [el('span', { texte: 'Payé par moi' }), el('span', { texte: euros(i.resteACharge) })]) : null,
     i.lieu ? el('li', null, [el('span', { texte: 'Fait par' }), el('span', { texte: i.lieu })]) : null,
     postes.length ? el('li', null, [el('span', { texte: 'Postes' }), el('span', { texte: postes.join(', ') })]) : null,
+    i.categorie === 'panne' ? el('li', null, [el('span', { texte: 'État' }),
+      el('span', { texte: i.resolueLe ? 'résolue' : 'en cours' })]) : null,
     i.notes ? el('li', null, [el('span', { texte: 'Notes' }), el('span', { texte: i.notes })]) : null,
   ]);
 
-  ouvrirFeuille(i.titre || cat.libelle, null, [
-    lignes,
-    bouton('Modifier', { principal: true, action: () => { fermerFeuille(); ouvrirIntervention(i.id); } }),
-    bouton('Supprimer', { danger: true, action: () => confirmerSuppression(i) }),
-  ]);
+  const actions = [lignes];
+  if (i.categorie === 'panne') {
+    actions.push(i.resolueLe
+      ? bouton('Rouvrir cette panne', {
+          action: () => {
+            i.resolueLe = null;
+            enregistrer('interventions');
+            fermerFeuille(); rendreTout(); toast('Panne rouverte');
+          },
+        })
+      : bouton('Marquer comme résolue', {
+          principal: true,
+          action: () => {
+            i.resolueLe = versIso(aujourdhui());
+            enregistrer('interventions');
+            fermerFeuille(); rendreTout(); toast('Panne résolue');
+          },
+        }));
+  }
+  actions.push(bouton('Modifier', {
+    principal: i.categorie !== 'panne' || !!i.resolueLe,
+    action: () => { fermerFeuille(); ouvrirIntervention(i.id); },
+  }));
+  actions.push(bouton('Supprimer', { danger: true, action: () => confirmerSuppression(i) }));
+
+  ouvrirFeuille(i.titre || cat.libelle, i.resolueLe ? 'Résolue le ' + dateCourte(i.resolueLe) : null, actions);
 }
 
 function confirmerSuppression(i) {
@@ -944,6 +1377,7 @@ function construireExport() {
     interventions: etat.interventions,
     regles: etat.regles,
     reglages: etat.reglages,
+    pneus: etat.pneus,
   };
 }
 
@@ -1065,13 +1499,68 @@ function analyserImport(texte, origine) {
     return;
   }
 
-  ouvrirFeuille('Importer', nb + ' interventions et ' + nbReleves + ' relevés. Cela remplace ce que contient l\'application.', [
-    bouton('Remplacer mes données', {
+  // Une sauvegarde complète remplace ; un fragment (mode ajout, ou ni véhicule ni règles) complète.
+  const fragment = donnees.mode === 'ajout' || (!donnees.vehicule && !Array.isArray(donnees.regles));
+  const actions = [];
+  if (fragment) {
+    actions.push(bouton('Ajouter au carnet', {
       principal: true,
-      action: () => { appliquerImport(donnees); fermerFeuille(); },
-    }),
-    bouton('Annuler', { action: fermerFeuille }),
-  ]);
+      action: () => { ajouterAuCarnet(donnees); fermerFeuille(); },
+    }));
+  }
+  actions.push(bouton('Remplacer tout', {
+    principal: !fragment,
+    danger: fragment,
+    action: () => { appliquerImport(donnees); fermerFeuille(); },
+  }));
+  actions.push(bouton('Annuler', { action: fermerFeuille }));
+
+  ouvrirFeuille('Importer', nb + ' interventions et ' + nbReleves + ' relevés dans ce fichier.'
+    + (fragment ? '' : ' Une sauvegarde complète remplace ce que contient l\'application.'), actions);
+}
+
+/* Ajout : on complète sans rien perdre. Un identifiant déjà connu est ignoré,
+   pour qu'un même fichier importé deux fois ne crée pas de doublons. */
+function signature(i) {
+  return (i.date || '') + '|' + String(i.titre || '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+function ajouterAuCarnet(donnees) {
+  const connus = new Set(etat.interventions.map(i => i.id));
+  const signatures = new Set(etat.interventions.map(signature));
+  let ajoutees = 0, ignorees = 0;
+  for (const i of (Array.isArray(donnees.interventions) ? donnees.interventions : [])) {
+    if (!i || !versDate(i.date)) continue;
+    // Une IA ne produit pas d'identifiant : sans signature, le même texte importé
+    // deux fois se dédoublerait silencieusement.
+    if ((i.id && connus.has(i.id)) || signatures.has(signature(i))) { ignorees++; continue; }
+    signatures.add(signature(i));
+    etat.interventions.push({
+      id: i.id || identifiant(),
+      date: i.date,
+      titre: String(i.titre || 'Sans titre'),
+      categorie: CATEGORIES.some(c => c.cle === i.categorie) ? i.categorie : 'depannage',
+      km: parseInt(i.km, 10) > 0 ? parseInt(i.km, 10) : 0,
+      coutTotal: Number(i.coutTotal) || 0,
+      resteACharge: (i.resteACharge === undefined || i.resteACharge === null)
+        ? (Number(i.coutTotal) || 0) : (Number(i.resteACharge) || 0),
+      lieu: String(i.lieu || ''),
+      notes: String(i.notes || ''),
+      postes: Array.isArray(i.postes) ? i.postes.filter(p => etat.regles.some(r => r.cle === p)) : [],
+      resolueLe: i.resolueLe || null,
+    });
+    ajoutees++;
+  }
+  for (const r of (Array.isArray(donnees.releves) ? donnees.releves : [])) {
+    if (r && r.km > 0 && versDate(r.date)) {
+      etat.releves.push({ id: r.id || identifiant(), date: r.date, km: Number(r.km), origine: 'import' });
+    }
+  }
+  enregistrer('interventions');
+  enregistrer('releves');
+  rendreTout();
+  const dit = ajoutees ? ajoutees + (ajoutees > 1 ? ' entrées ajoutées' : ' entrée ajoutée') : 'Rien de nouveau';
+  toast(ignorees ? dit + ', ' + ignorees + ' déjà présente' + (ignorees > 1 ? 's' : '') : dit);
 }
 
 function echecImport(titre, explication) {
@@ -1096,6 +1585,7 @@ function appliquerImport(donnees) {
   etat.interventions = Array.isArray(donnees.interventions) ? donnees.interventions : [];
   etat.regles = Array.isArray(donnees.regles) ? donnees.regles : [];
   etat.reglages = (donnees.reglages && typeof donnees.reglages === 'object') ? donnees.reglages : {};
+  etat.pneus = Array.isArray(donnees.pneus) ? donnees.pneus : [];
 
   for (const i of etat.interventions) {
     if (!i.id) i.id = identifiant();
@@ -1116,7 +1606,7 @@ function confirmerEffacement() {
       danger: true,
       action: () => {
         try { for (const cle of Object.values(CLES)) localStorage.removeItem(cle); } catch (e) { /* stockage indisponible */ }
-        etat = { vehicule: null, releves: [], interventions: [], regles: [], reglages: {} };
+        etat = { vehicule: null, releves: [], interventions: [], regles: [], reglages: {}, pneus: [] };
         fusionnerRegles();
         fermerFeuille();
         rendreTout();
@@ -1125,6 +1615,72 @@ function confirmerEffacement() {
     }),
     bouton('Annuler', { action: fermerFeuille }),
   ]);
+}
+
+/* ─────────────── Dicter à une IA ─────────────── */
+
+/* Le prompt embarque le contexte de la voiture et le vocabulaire exact de
+   l'application : sans cela, l'IA invente des catégories et des postes que
+   l'import devrait deviner. Ni immatriculation ni numéro de série : ils ne
+   servent à rien pour un diagnostic. */
+function construirePrompt() {
+  const v = etat.vehicule || {};
+  const actuel = kilometrageActuel();
+  const postes = etat.regles.map(r => r.cle).join(', ');
+  const cats = CATEGORIES.map(c => '"' + c.cle + '"').join(', ');
+  const identite = [v.marque, v.modele,
+    v.dateMiseCirculation ? 'de ' + v.dateMiseCirculation.slice(0, 4) : null,
+    v.energie].filter(Boolean).join(' ') || 'voiture';
+
+  return [
+    'Tu es mécanicien automobile. Je vais te décrire ce que j\'ai fait sur ma voiture,',
+    'ou le problème que je rencontre.',
+    '',
+    'Réponds UNIQUEMENT par un objet JSON, sans aucun texte avant ni après, sans balise',
+    'de code, exactement à ce format :',
+    '',
+    '{"application":"carnet-entretien","mode":"ajout","interventions":[{',
+    '  "date":"AAAA-MM-JJ", "titre":"court, en français",',
+    '  "categorie":' + cats + ',',
+    '  "km":entier, "coutTotal":nombre, "resteACharge":nombre,',
+    '  "lieu":"nom du garage ou Moi", "notes":"détails, hypothèses, pièces à vérifier",',
+    '  "postes":[liste parmi : ' + postes + ']',
+    '}]}',
+    '',
+    'Règles :',
+    '- Aujourd\'hui : ' + versIso(aujourdhui()) + '. Utilise cette date si je n\'en donne pas.',
+    '- Compteur estimé : ' + (actuel.km || 0) + ' km. Mets 0 si je ne parle pas de kilométrage.',
+    '- "resteACharge" vaut "coutTotal" sauf si je précise une part d\'assurance.',
+    '- "postes" ne contient que des postes réellement remplacés ou vidangés. Sinon, liste vide.',
+    '- Si je décris un problème non résolu, mets "categorie":"panne" et range tes hypothèses',
+    '  de diagnostic dans "notes", de la plus probable à la moins probable, avec le contrôle',
+    '  à faire pour trancher.',
+    '- Plusieurs interventions dans un même récit donnent plusieurs objets.',
+    '',
+    'Ma voiture : ' + identite + '.',
+    '',
+    'Voici ma demande : ',
+  ].join('\n');
+}
+
+function ouvrirImportIA() {
+  ouvrirFeuille('Dicter à une IA', 'Copie ce prompt, colle-le dans l\'IA de ton choix, décris ce que tu as fait ou ce qui ne va pas, puis rapporte sa réponse ici.', [
+    bouton('Copier le prompt', { principal: true, action: () => copierTexte(construirePrompt(), 'Prompt copié') }),
+    bouton('Coller la réponse', { action: ouvrirCollage }),
+    bouton('Voir le prompt', { action: () => afficherTexteBrut(construirePrompt()) }),
+    el('p', { classe: 'aide', texte: 'Le prompt contient la marque, le modèle, l\'année et le kilométrage. Ni immatriculation, ni numéro de série.' }),
+  ]);
+}
+
+async function copierTexte(texte, message) {
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(texte);
+      toast(message);
+      return;
+    }
+  } catch (e) { /* refusé hors contexte sécurisé */ }
+  afficherTexteBrut(texte);
 }
 
 /* ─────────────── Glissement sur une échéance ─────────────── */
@@ -1191,8 +1747,8 @@ function brancherGlissement(enveloppe, corps, fond, echeance) {
 const ETAPES = [
   ['Relève ton compteur', 'Le bouton en bas à droite. Deux relevés suffisent pour que tout le reste se calcule.'],
   ['Note ce que tu fais', 'Onglet Carnet, bouton +. Coche les postes concernés : leur compte à rebours repart de zéro.'],
-  ['Surveille la page du jour', 'En rouge ce qui est dépassé, en orange ce qui approche. Appuie sur une ligne pour agir.'],
-  ['Raccourci', 'Sur une ligne, glisse vers la droite : c\'est la même chose que « c\'est fait ».'],
+  ['Surveille la page du jour', 'Rouge : dépassé. Orange : ça approche. Appuie sur une ligne, ou glisse-la vers la droite pour dire que c\'est fait.'],
+  ['Suis tes pneus', 'Onglet Pneus : appuie sur une roue pour noter sa pression et sa gomme restante.'],
   ['Sauvegarde', 'Onglet Voiture, Exporter. Tes données ne quittent ce téléphone que si tu le demandes.'],
 ];
 
@@ -1226,7 +1782,7 @@ const ICONE_PLUS = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v1
 
 function allerA(nom) {
   vueCourante = nom;
-  for (const v of ['Aujourdhui', 'Carnet', 'Voiture']) {
+  for (const v of ['Aujourdhui', 'Carnet', 'Pneus', 'Voiture']) {
     $('#vue' + v).hidden = v !== nom;
   }
   for (const b of document.querySelectorAll('.nav-bouton')) {
@@ -1235,7 +1791,7 @@ function allerA(nom) {
     if (actif) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
   }
   const fab = $('#fab');
-  fab.hidden = nom === 'Voiture';
+  fab.hidden = nom === 'Voiture' || nom === 'Pneus';
   fab.innerHTML = nom === 'Aujourdhui' ? ICONE_COMPTEUR : ICONE_PLUS;
   fab.setAttribute('aria-label', nom === 'Aujourdhui' ? 'Relever le compteur' : 'Nouvelle intervention');
   window.scrollTo(0, 0);
@@ -1244,6 +1800,7 @@ function allerA(nom) {
 function rendreTout() {
   rendreAujourdhui();
   rendreCarnet();
+  rendrePneus();
   rendreVoiture();
 }
 
@@ -1273,6 +1830,9 @@ function brancherInterface() {
   $('#btnTuto2').addEventListener('click', ouvrirTutoriel);
 
   $('#ouvrirFiche').addEventListener('click', ouvrirFiche);
+  $('#btnTousPneus').addEventListener('click', ouvrirQuatrePressions);
+  $('#btnPressionsCible').addEventListener('click', ouvrirPressionsCible);
+  $('#btnImportIA').addEventListener('click', ouvrirImportIA);
   $('#btnExport').addEventListener('click', exporterJson);
   $('#btnExportCsv').addEventListener('click', exporterCsv);
   $('#btnEffacer').addEventListener('click', confirmerEffacement);

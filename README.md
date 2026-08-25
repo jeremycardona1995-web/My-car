@@ -12,8 +12,18 @@ sans réseau, sans compte et sans serveur.
 - **Carnet** — l'historique complet, groupé par année, filtrable par catégorie,
   avec la distinction entre le montant facturé et ce que vous avez réellement
   payé.
+- **Pneus** — les quatre roues vues du dessus ; on appuie sur l'une d'elles pour
+  noter sa pression et l'épaisseur de gomme restante, et l'application signale
+  un sous-gonflage ou une usure proche de la limite légale.
 - **Voiture** — la fiche du véhicule, la courbe du kilométrage, les dépenses par
-  an, la liste des postes suivis et la sauvegarde.
+  an, la liste des postes suivis, l'import assisté par IA et la sauvegarde.
+
+Une intervention rangée dans la catégorie **Panne** reste affichée en tête de
+l'écran du jour tant qu'elle n'a pas été déclarée résolue.
+
+Certains postes — plaquettes, pneus — sont marqués « au besoin » : ils sont
+suivis dans l'historique mais ne déclenchent aucun compte à rebours, puisqu'on
+les remplace à l'usure et non à date fixe.
 
 Cocher un poste dans une intervention relance son compte à rebours. Les
 échéances se calculent sur deux critères, le kilométrage et le temps : la
@@ -46,15 +56,21 @@ clés absentes d'un fichier plus ancien retombent sur leurs valeurs par défaut.
 
 ## Format des données
 
-Cinq clés versionnées dans `localStorage` : `vehiculeV1`, `relevesV1`,
-`interventionsV1`, `reglesV1`, `reglagesV1`. Chaque enregistrement porte un
+Six clés versionnées dans `localStorage` : `vehiculeV1`, `relevesV1`,
+`interventionsV1`, `reglesV1`, `reglagesV1`, `pneusV1`. Chaque enregistrement porte un
 identifiant stable (`crypto.randomUUID()`) ; aucun libellé affiché ne sert de
 clé, ce qui permet de renommer un poste sans rien casser. Les postes suivis sont
 identifiés par une clé technique (`vidange`, `filtre_air`, …) distincte de leur
 libellé.
 
-L'export JSON contient les cinq clés sans exception, plus un numéro de version
+L'export JSON contient les six clés sans exception, plus un numéro de version
 de format.
+
+L'import accepte aussi un **fragment** : un objet portant `"mode":"ajout"`, ou
+dépourvu de véhicule et de règles, complète le carnet au lieu de le remplacer.
+Un identifiant déjà présent est ignoré, si bien qu'un même fragment importé deux
+fois ne crée pas de doublon. C'est ce format que produit le prompt de
+*Voiture → Dicter à une IA*.
 
 ## Développement
 

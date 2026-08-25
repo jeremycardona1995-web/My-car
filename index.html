@@ -24,6 +24,11 @@
       <p class="entete-detail" id="compteurDetail">Aucun relevé enregistré</p>
     </header>
 
+    <section id="blocPannes" hidden>
+      <h2 class="titre-section titre-danger">En cours</h2>
+      <div id="listePannes" class="pile"></div>
+    </section>
+
     <section id="blocRetard" hidden>
       <h2 class="titre-section titre-danger">En retard</h2>
       <div id="listeRetard" class="pile"></div>
@@ -70,6 +75,34 @@
     <p class="vide" id="videCarnet" hidden>Aucune intervention. Appuie sur + pour en ajouter une.</p>
   </main>
 
+  <!-- ───────────────────────────── Pneus ───────────────────────────── -->
+  <main id="vuePneus" class="vue" hidden>
+    <header class="entete entete-compacte">
+      <h1 class="titre-vue">Pneus</h1>
+      <p class="entete-detail" id="pneusResume">Appuie sur un pneu pour le renseigner</p>
+    </header>
+
+    <div class="carte carte-vehicule">
+      <div id="schemaPneus"></div>
+    </div>
+
+    <button class="feuille-bouton principal bouton-large" id="btnTousPneus" type="button">
+      Saisir les quatre pressions
+    </button>
+
+    <h2 class="titre-section">Réglages</h2>
+    <div class="carte">
+      <button class="ligne ligne-bouton" id="btnPressionsCible">
+        <span>Pressions recommandées</span><span class="ligne-detail" id="detailPressionsCible">—</span>
+      </button>
+    </div>
+    <p class="note">Les valeurs recommandées sont sur l'étiquette collée dans l'encadrement de
+      la portière conducteur, ou sur la trappe à carburant. À froid.</p>
+
+    <h2 class="titre-section">Historique</h2>
+    <div id="historiquePneus"></div>
+  </main>
+
   <!-- ───────────────────────────── Voiture ───────────────────────────── -->
   <main id="vueVoiture" class="vue" hidden>
     <header class="entete entete-compacte">
@@ -106,6 +139,9 @@
       <button class="ligne ligne-bouton" id="btnImport">
         <span>Importer une sauvegarde</span>
       </button>
+      <button class="ligne ligne-bouton" id="btnImportIA">
+        <span>Dicter à une IA</span><span class="ligne-detail">prompt à copier</span>
+      </button>
       <button class="ligne ligne-bouton" id="btnTuto2">
         <span>Revoir le mode d'emploi</span>
       </button>
@@ -133,6 +169,10 @@
     <button class="nav-bouton" data-vue="Carnet">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h11l3 3v13H5z"/><path d="M8 10h8M8 14h5"/></svg>
       <span>Carnet</span>
+    </button>
+    <button class="nav-bouton" data-vue="Pneus">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="3.5"/><path d="M12 3.5v5M12 15.5v5M3.5 12h5M15.5 12h5"/></svg>
+      <span>Pneus</span>
     </button>
     <button class="nav-bouton" data-vue="Voiture">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 15h16v-3l-2-5H6l-2 5z"/><circle cx="8" cy="17" r="1.6"/><circle cx="16" cy="17" r="1.6"/></svg>
