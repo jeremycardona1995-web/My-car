@@ -1011,27 +1011,80 @@ function afficherTexteBrut(contenu) {
   ]);
 }
 
+function ouvrirImport() {
+  ouvrirFeuille('Importer une sauvegarde', 'Un fichier exporté depuis cette application, ou son contenu collé.', [
+    bouton('Choisir un fichier', { principal: true, action: () => $('#fichierImport').click() }),
+    bouton('Coller le texte', { action: ouvrirCollage }),
+  ]);
+}
+
+function ouvrirCollage() {
+  const zone = el('textarea', { classe: 'zone-export', placeholder: 'Colle ici le contenu du fichier, en entier.', rows: 6 });
+  ouvrirFeuille('Coller la sauvegarde', 'Le texte commence par une accolade et finit par une accolade.', [
+    el('div', { classe: 'champ' }, [zone]),
+    bouton('Importer', { principal: true, action: () => analyserImport(zone.value, 'le texte collé') }),
+  ]);
+}
+
+/* Un import qui échoue doit dire ce qu'il a lu : sans cela, « fichier illisible »
+   n'aide personne à retrouver le bon fichier. */
+function analyserImport(texte, origine) {
+  const brut = String(texte || '').replace(/^\uFEFF/, '').trim();
+
+  if (!brut) { echecImport('Rien à lire', origine + ' est vide.'); return; }
+  if (brut.startsWith('[InternetShortcut]') || brut.startsWith('URL=')) {
+    echecImport('Ce n\'est pas la sauvegarde',
+      'C\'est un raccourci internet de quelques octets, pas le fichier. Retourne le télécharger, puis choisis le fichier enregistré.');
+    return;
+  }
+  if (brut.startsWith('<')) {
+    echecImport('Ce n\'est pas la sauvegarde',
+      'C\'est une page web. Le téléchargement a sans doute renvoyé une page de connexion au lieu du fichier.');
+    return;
+  }
+  if (!brut.startsWith('{')) {
+    echecImport('Format inattendu',
+      'Une sauvegarde commence par une accolade. Celle-ci commence par : ' + brut.slice(0, 40));
+    return;
+  }
+
+  let donnees;
+  try {
+    donnees = JSON.parse(brut);
+  } catch (e) {
+    echecImport('Contenu incomplet',
+      'Le texte est reconnu comme une sauvegarde mais s\'arrête en chemin — il manque probablement la fin. Détail : ' + e.message);
+    return;
+  }
+  if (!donnees || typeof donnees !== 'object') { echecImport('Format inattendu', 'Le contenu n\'est pas une sauvegarde.'); return; }
+
+  const nb = Array.isArray(donnees.interventions) ? donnees.interventions.length : 0;
+  const nbReleves = Array.isArray(donnees.releves) ? donnees.releves.length : 0;
+  if (!nb && !nbReleves && !donnees.vehicule) {
+    echecImport('Sauvegarde vide', 'Ce fichier ne contient ni intervention, ni relevé, ni véhicule.');
+    return;
+  }
+
+  ouvrirFeuille('Importer', nb + ' interventions et ' + nbReleves + ' relevés. Cela remplace ce que contient l\'application.', [
+    bouton('Remplacer mes données', {
+      principal: true,
+      action: () => { appliquerImport(donnees); fermerFeuille(); },
+    }),
+    bouton('Annuler', { action: fermerFeuille }),
+  ]);
+}
+
+function echecImport(titre, explication) {
+  ouvrirFeuille(titre, explication, [
+    bouton('Réessayer', { principal: true, action: ouvrirImport }),
+    bouton('Fermer', { action: fermerFeuille }),
+  ]);
+}
+
 function importerFichier(fichier) {
   const lecteur = new FileReader();
-  lecteur.onload = () => {
-    let donnees;
-    try {
-      donnees = JSON.parse(String(lecteur.result));
-    } catch (e) {
-      toast('Fichier illisible');
-      return;
-    }
-    if (!donnees || typeof donnees !== 'object') { toast('Fichier inattendu'); return; }
-    const nb = Array.isArray(donnees.interventions) ? donnees.interventions.length : 0;
-    ouvrirFeuille('Importer', nb + ' interventions dans ce fichier. Cela remplace ce que contient l\'application.', [
-      bouton('Remplacer mes données', {
-        principal: true,
-        action: () => { appliquerImport(donnees); fermerFeuille(); },
-      }),
-      bouton('Annuler', { action: fermerFeuille }),
-    ]);
-  };
-  lecteur.onerror = () => toast('Lecture impossible');
+  lecteur.onload = () => analyserImport(lecteur.result, 'ce fichier (' + fichier.size + ' octets)');
+  lecteur.onerror = () => echecImport('Lecture impossible', 'Le téléphone n\'a pas pu ouvrir ce fichier.');
   lecteur.readAsText(fichier);
 }
 
@@ -1223,7 +1276,7 @@ function brancherInterface() {
   $('#btnExport').addEventListener('click', exporterJson);
   $('#btnExportCsv').addEventListener('click', exporterCsv);
   $('#btnEffacer').addEventListener('click', confirmerEffacement);
-  $('#btnImport').addEventListener('click', () => $('#fichierImport').click());
+  $('#btnImport').addEventListener('click', ouvrirImport);
   $('#fichierImport').addEventListener('change', ev => {
     const f = ev.target.files && ev.target.files[0];
     if (f) importerFichier(f);
