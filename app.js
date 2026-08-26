@@ -4,7 +4,7 @@
 
 'use strict';
 
-const VERSION_APPLI = '1.1.0';
+const VERSION_APPLI = '1.2.0';
 const VERSION_FORMAT = 1;
 const CLES = {
   vehicule: 'vehiculeV1',
@@ -554,6 +554,82 @@ function carteEcheance(e) {
   return enveloppe;
 }
 
+/* ─────────────── Recherche ─────────────── */
+
+let texteRecherche = '';
+
+/* Normalisation à longueur constante : les positions trouvées dans le texte
+   sans accents restent valables dans le texte affiché, ce qui permet de
+   surligner sans décalage. Une boucle sur les unités UTF-16, et non sur les
+   points de code, pour qu'un emoji ne décale rien non plus. */
+function sansAccents(texte) {
+  const t = String(texte === null || texte === undefined ? '' : texte);
+  let sortie = '';
+  for (let i = 0; i < t.length; i++) sortie += t[i].normalize('NFD')[0].toLowerCase();
+  return sortie;
+}
+
+function motsRecherches() {
+  return sansAccents(texteRecherche).split(/\s+/).filter(Boolean);
+}
+
+/* Tout ce dans quoi on peut chercher : intitulé, notes, garage, catégorie,
+   postes remis à zéro, date sous ses deux formes, kilométrage. */
+function indexIntervention(i) {
+  const postes = (i.postes || [])
+    .map(c => (etat.regles.find(r => r.cle === c) || {}).libelle)
+    .filter(Boolean);
+  return sansAccents([
+    i.titre, i.notes, i.lieu, categorie(i.categorie).libelle,
+    postes.join(' '), i.date, dateCourte(i.date),
+    i.km ? nombreKm(i.km) + ' km ' + i.km : '',
+    i.coutTotal ? euros(i.coutTotal) + ' ' + i.coutTotal : '',
+  ].filter(Boolean).join(' '));
+}
+
+function correspond(i, mots) {
+  if (!mots.length) return true;
+  const index = indexIntervention(i);
+  return mots.every(m => index.includes(m));
+}
+
+/* Renvoie un fragment où chaque mot cherché est encadré d'un <mark>. */
+function texteSurligne(texte, mots) {
+  const brut = String(texte === null || texte === undefined ? '' : texte);
+  const fragment = document.createDocumentFragment();
+  if (!mots.length || !brut) { fragment.appendChild(document.createTextNode(brut)); return fragment; }
+
+  const plat = sansAccents(brut);
+  const zones = [];
+  for (const m of mots) {
+    let depart = 0;
+    while (depart <= plat.length - m.length) {
+      const trouve = plat.indexOf(m, depart);
+      if (trouve === -1) break;
+      zones.push([trouve, trouve + m.length]);
+      depart = trouve + m.length;
+    }
+  }
+  if (!zones.length) { fragment.appendChild(document.createTextNode(brut)); return fragment; }
+
+  zones.sort((a, b) => a[0] - b[0]);
+  const fusion = [zones[0]];
+  for (const z of zones.slice(1)) {
+    const derniere = fusion[fusion.length - 1];
+    if (z[0] <= derniere[1]) derniere[1] = Math.max(derniere[1], z[1]);
+    else fusion.push(z);
+  }
+
+  let curseur = 0;
+  for (const [debut, fin] of fusion) {
+    if (debut > curseur) fragment.appendChild(document.createTextNode(brut.slice(curseur, debut)));
+    fragment.appendChild(el('mark', { texte: brut.slice(debut, fin) }));
+    curseur = fin;
+  }
+  if (curseur < brut.length) fragment.appendChild(document.createTextNode(brut.slice(curseur)));
+  return fragment;
+}
+
 /* ─────────────── Vue : Carnet ─────────────── */
 
 let filtreActif = 'tout';
@@ -580,15 +656,28 @@ function rendreCarnet() {
   const zone = $('#listeCarnet');
   zone.textContent = '';
 
+  const mots = motsRecherches();
   const toutes = etat.interventions.slice().sort((a, b) => a.date < b.date ? 1 : a.date > b.date ? -1 : 0);
-  const visibles = filtreActif === 'tout' ? toutes : toutes.filter(i => i.categorie === filtreActif);
+  const visibles = toutes.filter(i =>
+    (filtreActif === 'tout' || i.categorie === filtreActif) && correspond(i, mots));
 
+  const totalVisible = visibles.reduce((s, i) => s + (Number(i.coutTotal) || 0), 0);
   const total = toutes.reduce((s, i) => s + (Number(i.coutTotal) || 0), 0);
-  $('#carnetResume').textContent = toutes.length
-    ? toutes.length + ' interventions · ' + euros(total) + ' investis'
-    : 'Rien pour l\'instant';
+  const filtre = mots.length || filtreActif !== 'tout';
 
-  $('#videCarnet').hidden = visibles.length > 0;
+  $('#carnetResume').textContent = !toutes.length
+    ? 'Rien pour l\'instant'
+    : filtre
+      ? visibles.length + (visibles.length > 1 ? ' résultats · ' : ' résultat · ') + euros(totalVisible)
+      : toutes.length + ' interventions · ' + euros(total) + ' investis';
+
+  const vide = $('#videCarnet');
+  vide.hidden = visibles.length > 0;
+  vide.textContent = !toutes.length
+    ? 'Aucune intervention. Appuie sur + pour en ajouter une.'
+    : mots.length
+      ? 'Rien ne correspond à « ' + texteRecherche.trim() + ' »'
+      : 'Aucune intervention dans cette catégorie.';
 
   let anneeCourante = null;
   for (const i of visibles) {
@@ -603,14 +692,15 @@ function rendreCarnet() {
         el('span', { classe: 'annee-total', texte: totalAnnee ? euros(totalAnnee) : '' }),
       ]));
     }
-    zone.appendChild(carteIntervention(i));
+    zone.appendChild(carteIntervention(i, mots));
   }
 }
 
-function carteIntervention(i) {
+function carteIntervention(i, mots) {
   const cat = categorie(i.categorie);
   const bas = [dateCourte(i.date), cat.libelle, i.km > 0 ? nombreKm(i.km) + ' km' : null, i.lieu || null]
     .filter(Boolean).join(' · ');
+  const surligne = mots && mots.length ? mots : [];
 
   const facture = Number(i.coutTotal) || 0;
   const charge = Number(i.resteACharge) || 0;
@@ -621,8 +711,8 @@ function carteIntervention(i) {
   }, [
     el('span', { classe: 'pastille', style: 'background:' + cat.couleur }),
     el('span', { classe: 'evenement-texte' }, [
-      el('span', { classe: 'evenement-titre', texte: i.titre || cat.libelle }),
-      el('span', { classe: 'evenement-detail', texte: bas }),
+      el('span', { classe: 'evenement-titre' }, [texteSurligne(i.titre || cat.libelle, surligne)]),
+      el('span', { classe: 'evenement-detail' }, [texteSurligne(bas, surligne)]),
     ]),
     facture ? el('span', { classe: 'evenement-cout' }, [
       document.createTextNode(euros(facture)),
@@ -1828,6 +1918,23 @@ function brancherInterface() {
 
   $('#btnTuto').addEventListener('click', ouvrirTutoriel);
   $('#btnTuto2').addEventListener('click', ouvrirTutoriel);
+
+  const champRecherche = $('#rechercheCarnet');
+  champRecherche.addEventListener('input', () => {
+    texteRecherche = champRecherche.value;
+    $('#viderRecherche').hidden = !texteRecherche;
+    rendreCarnet();
+  });
+  champRecherche.addEventListener('keydown', ev => {
+    if (ev.key === 'Enter') { ev.preventDefault(); champRecherche.blur(); }
+  });
+  $('#viderRecherche').addEventListener('click', () => {
+    champRecherche.value = '';
+    texteRecherche = '';
+    $('#viderRecherche').hidden = true;
+    rendreCarnet();
+    champRecherche.focus();
+  });
 
   $('#ouvrirFiche').addEventListener('click', ouvrirFiche);
   $('#btnTousPneus').addEventListener('click', ouvrirQuatrePressions);

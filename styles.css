@@ -339,3 +339,36 @@ dialog.feuille[open] { animation: monte 220ms cubic-bezier(.22,.8,.3,1); }
 .barre-usure span { display: block; height: 100%; border-radius: 3px; background: var(--ok); }
 .barre-usure.proche span { background: var(--accent); }
 .barre-usure.retard span { background: var(--danger); }
+
+/* ─────────────── Recherche dans le carnet ─────────────── */
+.recherche {
+  display: flex; align-items: center; gap: 10px;
+  margin: 6px 0 12px; padding: 0 14px;
+  min-height: 50px; border-radius: 14px;
+  background: var(--surface); border: 1px solid transparent;
+}
+.recherche:focus-within { border-color: var(--accent); }
+.recherche-icone {
+  width: 20px; height: 20px; flex: none; fill: none;
+  stroke: var(--attenue); stroke-width: 2; stroke-linecap: round;
+}
+.recherche input {
+  flex: 1; min-width: 0; height: 48px; padding: 0;
+  background: none; border: 0; font-size: 16px;
+  user-select: text; -webkit-user-select: text; appearance: none;
+}
+.recherche input:focus { outline: none; }
+.recherche input::placeholder { color: var(--attenue); }
+.recherche input::-webkit-search-cancel-button { display: none; }
+.recherche-vider {
+  flex: none; width: 34px; height: 34px; margin-right: -6px;
+  display: grid; place-items: center; border-radius: 50%;
+  background: var(--surface-2);
+}
+.recherche-vider svg { width: 15px; height: 15px; fill: none; stroke: var(--attenue); stroke-width: 2.2; stroke-linecap: round; }
+.recherche-vider:active { background: var(--bordure); }
+
+mark {
+  background: var(--accent-sourd); color: var(--accent);
+  border-radius: 3px; padding: 0 2px;
+}

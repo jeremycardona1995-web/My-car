@@ -70,6 +70,18 @@
       <p class="entete-detail" id="carnetResume">—</p>
     </header>
 
+    <div class="recherche">
+      <svg class="recherche-icone" viewBox="0 0 24 24" aria-hidden="true">
+        <circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/>
+      </svg>
+      <input id="rechercheCarnet" type="search" inputmode="search" enterkeyhint="search"
+             autocomplete="off" autocapitalize="none" spellcheck="false"
+             placeholder="Chercher : pneu, garage, 2021…" aria-label="Chercher dans le carnet">
+      <button class="recherche-vider" id="viderRecherche" type="button" aria-label="Effacer la recherche" hidden>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+
     <div class="filtres" id="filtres" role="tablist"></div>
     <div id="listeCarnet"></div>
     <p class="vide" id="videCarnet" hidden>Aucune intervention. Appuie sur + pour en ajouter une.</p>

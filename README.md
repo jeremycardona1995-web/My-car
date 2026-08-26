@@ -9,9 +9,12 @@ sans réseau, sans compte et sans serveur.
 - **Aujourd'hui** — le kilométrage du jour (estimé à partir de vos relevés) et
   la liste des postes classés par urgence : en retard, bientôt, à jour, jamais
   renseignés.
-- **Carnet** — l'historique complet, groupé par année, filtrable par catégorie,
-  avec la distinction entre le montant facturé et ce que vous avez réellement
-  payé.
+- **Carnet** — l'historique complet, groupé par année, filtrable par catégorie
+  et interrogeable par un champ de recherche, avec la distinction entre le
+  montant facturé et ce que vous avez réellement payé. La recherche porte sur
+  l'intitulé, les notes, le garage, la catégorie, les postes remis à zéro, la
+  date et les montants ; elle ignore les accents et la casse, exige que tous
+  les mots saisis soient présents, et surligne ce qu'elle a trouvé.
 - **Pneus** — les quatre roues vues du dessus ; on appuie sur l'une d'elles pour
   noter sa pression et l'épaisseur de gomme restante, et l'application signale
   un sous-gonflage ou une usure proche de la limite légale.
