@@ -10,7 +10,9 @@ sans réseau, sans compte et sans serveur.
   la liste des postes classés par urgence : en retard, bientôt, à jour, jamais
   renseignés.
 - **Carnet** — l'historique complet, groupé par année, filtrable par catégorie
-  et interrogeable par un champ de recherche, avec la distinction entre le
+  et par intervenant — la liste des garages se déduit du carnet lui-même, les
+  variantes d'orthographe d'un même nom étant regroupées — et interrogeable
+  par un champ de recherche, avec la distinction entre le
   montant facturé et ce que vous avez réellement payé. La recherche porte sur
   l'intitulé, les notes, le garage, la catégorie, les postes remis à zéro, la
   date et les montants ; elle ignore les accents et la casse, exige que tous

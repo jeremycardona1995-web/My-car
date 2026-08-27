@@ -4,7 +4,7 @@
 
 'use strict';
 
-const VERSION_APPLI = '1.2.0';
+const VERSION_APPLI = '1.3.0';
 const VERSION_FORMAT = 1;
 const CLES = {
   vehicule: 'vehiculeV1',
@@ -633,6 +633,38 @@ function texteSurligne(texte, mots) {
 /* ─────────────── Vue : Carnet ─────────────── */
 
 let filtreActif = 'tout';
+let filtreQui = 'tous';
+
+/* La liste des intervenants se déduit du carnet : « Moi » d'abord, puis les
+   garages du plus fréquent au moins fréquent. Les variantes d'orthographe
+   d'un même nom sont regroupées sur leur forme la plus employée. */
+function intervenants() {
+  const groupes = new Map();
+  let sansLieu = 0;
+  for (const i of etat.interventions) {
+    const brut = String((i && i.lieu) || '').trim();
+    if (!brut) { sansLieu++; continue; }
+    const cle = sansAccents(brut);
+    const g = groupes.get(cle) || { cle, formes: new Map(), nombre: 0 };
+    g.formes.set(brut, (g.formes.get(brut) || 0) + 1);
+    g.nombre++;
+    groupes.set(cle, g);
+  }
+  const liste = [...groupes.values()].map(g => ({
+    cle: g.cle,
+    nombre: g.nombre,
+    libelle: [...g.formes.entries()].sort((a, b) => b[1] - a[1])[0][0],
+  }));
+  liste.sort((a, b) => (a.cle === 'moi' ? -1 : b.cle === 'moi' ? 1 : 0) || b.nombre - a.nombre);
+  if (sansLieu) liste.push({ cle: 'aucun', nombre: sansLieu, libelle: 'Non renseigné' });
+  return liste;
+}
+
+function faitPar(i, cle) {
+  if (cle === 'tous') return true;
+  const brut = String((i && i.lieu) || '').trim();
+  return cle === 'aucun' ? !brut : sansAccents(brut) === cle;
+}
 
 function rendreFiltres() {
   const zone = $('#filtres');
@@ -644,6 +676,31 @@ function rendreFiltres() {
       type: 'button',
       texte: o.libelle,
       sur: { click: () => { filtreActif = o.cle; rendreFiltres(); rendreCarnet(); } },
+    }));
+  }
+  rendreFiltresQui();
+}
+
+function rendreFiltresQui() {
+  const zone = $('#filtresQui');
+  zone.textContent = '';
+  const liste = intervenants();
+
+  // Une seule main sur la voiture : la rangée n'apporterait rien.
+  const utile = liste.filter(x => x.cle !== 'aucun').length >= 2;
+  zone.hidden = !utile;
+  if (!utile) {
+    if (filtreQui !== 'tous') { filtreQui = 'tous'; }
+    return;
+  }
+  if (!liste.some(x => x.cle === filtreQui) && filtreQui !== 'tous') filtreQui = 'tous';
+
+  for (const o of [{ cle: 'tous', libelle: 'Par tous' }].concat(liste)) {
+    zone.appendChild(el('button', {
+      classe: 'filtre' + (filtreQui === o.cle ? ' actif' : ''),
+      type: 'button',
+      texte: o.nombre ? o.libelle + ' · ' + o.nombre : o.libelle,
+      sur: { click: () => { filtreQui = o.cle; rendreFiltres(); rendreCarnet(); } },
     }));
   }
 }
@@ -659,11 +716,12 @@ function rendreCarnet() {
   const mots = motsRecherches();
   const toutes = etat.interventions.slice().sort((a, b) => a.date < b.date ? 1 : a.date > b.date ? -1 : 0);
   const visibles = toutes.filter(i =>
-    (filtreActif === 'tout' || i.categorie === filtreActif) && correspond(i, mots));
+    (filtreActif === 'tout' || i.categorie === filtreActif)
+    && faitPar(i, filtreQui) && correspond(i, mots));
 
   const totalVisible = visibles.reduce((s, i) => s + (Number(i.coutTotal) || 0), 0);
   const total = toutes.reduce((s, i) => s + (Number(i.coutTotal) || 0), 0);
-  const filtre = mots.length || filtreActif !== 'tout';
+  const filtre = mots.length || filtreActif !== 'tout' || filtreQui !== 'tous';
 
   $('#carnetResume').textContent = !toutes.length
     ? 'Rien pour l\'instant'
@@ -677,7 +735,7 @@ function rendreCarnet() {
     ? 'Aucune intervention. Appuie sur + pour en ajouter une.'
     : mots.length
       ? 'Rien ne correspond à « ' + texteRecherche.trim() + ' »'
-      : 'Aucune intervention dans cette catégorie.';
+      : 'Rien avec ces filtres.';
 
   let anneeCourante = null;
   for (const i of visibles) {
@@ -1271,8 +1329,14 @@ function ouvrirIntervention(idExistant, reglePrecochee) {
 
   const cLieu = champ('iLieu', 'Fait par', {
     type: 'text', autocomplete: 'off', placeholder: 'Moi, ou le nom du garage',
+    list: 'listeIntervenants',
     value: existant ? (existant.lieu || '') : '',
   });
+  const suggestions = $('#listeIntervenants');
+  suggestions.textContent = '';
+  for (const x of intervenants()) {
+    if (x.cle !== 'aucun') suggestions.appendChild(el('option', { value: x.libelle }));
+  }
   const cNotes = champ('iNotes', 'Notes', { balise: 'textarea', placeholder: 'Facultatif',
     value: existant ? (existant.notes || '') : '' });
   if (existant && existant.notes) cNotes.entree.value = existant.notes;
@@ -1889,6 +1953,7 @@ function allerA(nom) {
 
 function rendreTout() {
   rendreAujourdhui();
+  rendreFiltres();
   rendreCarnet();
   rendrePneus();
   rendreVoiture();

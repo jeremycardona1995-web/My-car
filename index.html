@@ -83,6 +83,7 @@
     </div>
 
     <div class="filtres" id="filtres" role="tablist"></div>
+    <div class="filtres filtres-qui" id="filtresQui" role="tablist" hidden></div>
     <div id="listeCarnet"></div>
     <p class="vide" id="videCarnet" hidden>Aucune intervention. Appuie sur + pour en ajouter une.</p>
   </main>
@@ -165,6 +166,7 @@
       Exporte de temps en temps : c'est la seule sauvegarde qui survit à tout.</p>
     <p class="note note-version" id="noteVersion"></p>
     <input type="file" id="fichierImport" accept=".json,application/json,text/plain,text/*" hidden>
+    <datalist id="listeIntervenants"></datalist>
   </main>
 
   <!-- ───────────────────────────── Bouton flottant ───────────────────────────── -->
