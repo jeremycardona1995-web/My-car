@@ -4,7 +4,7 @@
 
 'use strict';
 
-const VERSION_APPLI = '1.4.0';
+const VERSION_APPLI = '1.5.0';
 const VERSION_FORMAT = 1;
 const CLES = {
   vehicule: 'vehiculeV1',
@@ -84,6 +84,39 @@ function chargerEtat() {
   etat.pneus = lire(CLES.pneus, []);
   fusionnerRegles();
   migrerPostesAuBesoin();
+  migrerParQui();
+}
+
+/* « Fait par » servait à la fois à dire « moi » et à nommer un garage : un même
+   champ pour deux informations, et « moi-même » créait un second intervenant.
+   On sépare la nature — moi ou un professionnel — du nom du garage. */
+const MOTS_MOI = ['moi', 'moi meme', 'moi-meme', 'perso', 'personnel', 'soi', 'maison'];
+
+function migrerParQui() {
+  if (etat.reglages.migrationParQui) return;
+  for (const i of etat.interventions) {
+    if (!i || i.parQui) continue;
+    const brut = String(i.lieu || '').trim();
+    if (!brut) { i.parQui = ''; continue; }
+    if (MOTS_MOI.includes(sansAccents(brut).replace(/\s+/g, ' '))) {
+      i.parQui = 'moi';
+      i.lieu = '';
+    } else {
+      i.parQui = 'pro';
+    }
+  }
+  etat.reglages.migrationParQui = true;
+  enregistrer('interventions');
+  enregistrer('reglages');
+}
+
+/* Ce qu'on affiche dans le carnet à la place de l'ancien champ libre. */
+function auteur(i) {
+  if (!i) return '';
+  if (i.parQui === 'moi') return 'Moi';
+  const nom = String(i.lieu || '').trim();
+  if (nom) return nom;
+  return i.parQui === 'pro' ? 'Un professionnel' : '';
 }
 
 /* Plaquettes et pneus se changent quand ils sont usés, pas à date fixe.
@@ -640,30 +673,42 @@ let filtreQui = 'tous';
    d'un même nom sont regroupées sur leur forme la plus employée. */
 function intervenants() {
   const groupes = new Map();
-  let sansLieu = 0;
+  let parMoi = 0, proSansNom = 0, indetermines = 0;
+
   for (const i of etat.interventions) {
-    const brut = String((i && i.lieu) || '').trim();
-    if (!brut) { sansLieu++; continue; }
+    if (!i) continue;
+    if (i.parQui === 'moi') { parMoi++; continue; }
+    const brut = String(i.lieu || '').trim();
+    if (!brut) {
+      if (i.parQui === 'pro') proSansNom++; else indetermines++;
+      continue;
+    }
     const cle = sansAccents(brut);
-    const g = groupes.get(cle) || { cle, formes: new Map(), nombre: 0 };
+    const g = groupes.get(cle) || { cle, formes: new Map(), nombre: 0, total: 0, derniere: '' };
     g.formes.set(brut, (g.formes.get(brut) || 0) + 1);
     g.nombre++;
+    g.total += Number(i.coutTotal) || 0;
+    if (i.date > g.derniere) g.derniere = i.date;
     groupes.set(cle, g);
   }
-  const liste = [...groupes.values()].map(g => ({
+
+  const garages = [...groupes.values()].map(g => ({
     cle: g.cle,
     nombre: g.nombre,
+    total: g.total,
+    derniere: g.derniere,
     libelle: [...g.formes.entries()].sort((a, b) => b[1] - a[1])[0][0],
   }));
-  liste.sort((a, b) => (a.cle === 'moi' ? -1 : b.cle === 'moi' ? 1 : 0) || b.nombre - a.nombre);
-  if (sansLieu) liste.push({ cle: 'aucun', nombre: sansLieu, libelle: 'Non renseigné' });
-  return liste;
+  garages.sort((a, b) => b.nombre - a.nombre || b.total - a.total);
+  return { garages, parMoi, proSansNom, indetermines };
 }
 
 function faitPar(i, cle) {
   if (cle === 'tous') return true;
-  const brut = String((i && i.lieu) || '').trim();
-  return cle === 'aucun' ? !brut : sansAccents(brut) === cle;
+  if (cle === 'moi') return i && i.parQui === 'moi';
+  if (cle === 'pro') return i && (i.parQui === 'pro' || String(i.lieu || '').trim() !== '');
+  if (cle === 'aucun') return i && !i.parQui && !String(i.lieu || '').trim();
+  return i && sansAccents(String(i.lieu || '').trim()) === cle;
 }
 
 function rendreFiltres() {
@@ -681,32 +726,117 @@ function rendreFiltres() {
   rendreFiltresQui();
 }
 
+function categorie(cle) {
+  return CATEGORIES.find(c => c.cle === cle) || { cle: 'autre', libelle: 'Autre', couleur: '#8b93a1' };
+}
+
+/* Rangée de taille fixe : quatre puces, toujours les mêmes, toujours à la même
+   place. La liste des garages vit dans une feuille — sans quoi la rangée
+   deviendrait un ruban à faire défiler à l'aveugle. */
 function rendreFiltresQui() {
   const zone = $('#filtresQui');
   zone.textContent = '';
-  const liste = intervenants();
+  const { garages, parMoi, proSansNom, indetermines } = intervenants();
+  const nombrePro = garages.reduce((n, g) => n + g.nombre, 0) + proSansNom;
 
-  // Une seule main sur la voiture : la rangée n'apporterait rien.
-  const utile = liste.filter(x => x.cle !== 'aucun').length >= 2;
+  const utile = parMoi > 0 && nombrePro > 0;
   zone.hidden = !utile;
-  if (!utile) {
-    if (filtreQui !== 'tous') { filtreQui = 'tous'; }
-    return;
-  }
-  if (!liste.some(x => x.cle === filtreQui) && filtreQui !== 'tous') filtreQui = 'tous';
+  if (!utile) { filtreQui = 'tous'; return; }
 
-  for (const o of [{ cle: 'tous', libelle: 'Par tous' }].concat(liste)) {
+  // Un garage supprimé du carnet ne doit pas laisser un filtre fantôme actif.
+  if (!['tous', 'moi', 'pro', 'aucun'].includes(filtreQui)
+      && !garages.some(g => g.cle === filtreQui)) filtreQui = 'tous';
+
+  const garageChoisi = garages.find(g => g.cle === filtreQui);
+  // Libellés courts : les quatre puces doivent tenir sur 360 px de large.
+  const puces = [
+    { cle: 'tous', libelle: 'Tous' },
+    { cle: 'moi', libelle: 'Moi · ' + parMoi },
+    { cle: 'pro', libelle: 'Garage · ' + nombrePro },
+  ];
+
+  for (const p of puces) {
     zone.appendChild(el('button', {
-      classe: 'filtre' + (filtreQui === o.cle ? ' actif' : ''),
-      type: 'button',
-      texte: o.nombre ? o.libelle + ' · ' + o.nombre : o.libelle,
-      sur: { click: () => { filtreQui = o.cle; rendreFiltres(); rendreCarnet(); } },
+      classe: 'filtre' + (filtreQui === p.cle ? ' actif' : ''),
+      type: 'button', texte: p.libelle,
+      sur: { click: () => { filtreQui = p.cle; rendreFiltres(); rendreCarnet(); } },
     }));
   }
+
+  const choisi = garageChoisi || (filtreQui === 'aucun' ? { libelle: 'Sans intervenant' } : null);
+  zone.appendChild(el('button', {
+    classe: 'filtre' + (choisi ? ' actif' : ''),
+    type: 'button',
+    texte: (choisi ? choisi.libelle : 'Choisir') + ' ▾',
+    sur: { click: ouvrirIntervenants },
+  }));
 }
 
-function categorie(cle) {
-  return CATEGORIES.find(c => c.cle === cle) || { cle: 'autre', libelle: 'Autre', couleur: '#8b93a1' };
+/* Même feuille depuis le carnet et depuis l'écran Voiture : d'un côté on
+   filtre, de l'autre on consulte, mais c'est la même information. */
+function ouvrirIntervenants() {
+  const { garages, parMoi, proSansNom, indetermines } = intervenants();
+  const contenu = [];
+
+  const filtrer = cle => {
+    filtreQui = cle;
+    fermerFeuille();
+    allerA('Carnet');
+    rendreFiltres();
+    rendreCarnet();
+  };
+
+  const ligne = (libelle, nombre, total, derniere, cle) => el('button', {
+    classe: 'ligne ligne-bouton', type: 'button', sur: { click: () => filtrer(cle) },
+  }, [
+    el('span', { classe: 'evenement-texte' }, [
+      el('span', { classe: 'evenement-titre', texte: libelle }),
+      el('span', { classe: 'evenement-detail',
+        texte: [nombre + (nombre > 1 ? ' interventions' : ' intervention'),
+          derniere ? 'dernière le ' + dateCourte(derniere) : null].filter(Boolean).join(' · ') }),
+    ]),
+    el('span', { classe: 'ligne-detail', texte: total ? euros(total) : '—' }),
+  ]);
+
+  const carte = el('div', { classe: 'carte' });
+  const totalMoi = etat.interventions
+    .filter(i => i.parQui === 'moi').reduce((n, i) => n + (Number(i.coutTotal) || 0), 0);
+  const derniereMoi = etat.interventions
+    .filter(i => i.parQui === 'moi').map(i => i.date).sort().pop();
+
+  if (parMoi) carte.appendChild(ligne('Moi', parMoi, totalMoi, derniereMoi, 'moi'));
+
+  const lignesGarages = [];
+  for (const g of garages) {
+    lignesGarages.push({ noeud: ligne(g.libelle, g.nombre, g.total, g.derniere, g.cle), texte: g.cle });
+  }
+
+  // Au-delà de huit garages, on ne parcourt plus une liste : on cherche.
+  if (lignesGarages.length > 8) {
+    const zone = el('input', {
+      type: 'search', inputmode: 'search', autocomplete: 'off', placeholder: 'Chercher un garage',
+    });
+    const enveloppe = el('div', { classe: 'recherche' }, [zone]);
+    zone.addEventListener('input', () => {
+      const q = sansAccents(zone.value);
+      for (const l of lignesGarages) l.noeud.hidden = q && !l.texte.includes(q);
+    });
+    contenu.push(enveloppe);
+  }
+  for (const l of lignesGarages) carte.appendChild(l.noeud);
+
+  if (proSansNom) carte.appendChild(ligne('Professionnel sans nom', proSansNom, 0, '', 'pro'));
+  if (indetermines) carte.appendChild(ligne('Pas encore renseigné', indetermines, 0, '', 'aucun'));
+
+  contenu.push(carte);
+  contenu.push(bouton('Voir tout le carnet', { action: () => filtrer('tous') }));
+
+  const totalGarages = garages.reduce((n, g) => n + g.total, 0);
+  ouvrirFeuille('Qui a fait quoi',
+    parMoi
+      ? euros(totalGarages) + ' passés en garage, ' + parMoi + (parMoi > 1 ? ' interventions faites' : ' intervention faite') + ' par toi.'
+      : euros(totalGarages) + ' passés en garage.',
+    contenu);
 }
 
 function rendreCarnet() {
@@ -756,7 +886,7 @@ function rendreCarnet() {
 
 function carteIntervention(i, mots) {
   const cat = categorie(i.categorie);
-  const bas = [dateCourte(i.date), cat.libelle, i.km > 0 ? nombreKm(i.km) + ' km' : null, i.lieu || null]
+  const bas = [dateCourte(i.date), cat.libelle, i.km > 0 ? nombreKm(i.km) + ' km' : null, auteur(i) || null]
     .filter(Boolean).join(' · ');
   const surligne = mots && mots.length ? mots : [];
 
@@ -1102,6 +1232,12 @@ function rendreVoiture() {
     : jours <= 0 ? "aujourd'hui" : 'il y a ' + dureeLisible(jours);
   detail.style.color = (jours === null || jours > EXPORT_APRES_JOURS) ? 'var(--danger)' : '';
 
+  const qui = intervenants();
+  $('#detailIntervenants').textContent = qui.garages.length
+    ? qui.garages.length + (qui.garages.length > 1 ? ' garages' : ' garage')
+      + (qui.parMoi ? ' · moi' : '')
+    : (qui.parMoi ? 'moi seulement' : 'aucun');
+
   $('#detailVersion').textContent = VERSION_APPLI;
   $('#noteVersion').textContent = 'Format de données v' + VERSION_FORMAT + ' · application ' + VERSION_APPLI;
 }
@@ -1341,16 +1477,37 @@ function ouvrirIntervention(idExistant, reglePrecochee) {
     value: existant && existant.resteACharge !== undefined && existant.resteACharge !== null ? String(existant.resteACharge) : '',
   });
 
-  const cLieu = champ('iLieu', 'Fait par', {
-    type: 'text', autocomplete: 'off', placeholder: 'Moi, ou le nom du garage',
+  const cGarage = champ('iLieu', 'Nom du garage', {
+    type: 'text', autocomplete: 'off', placeholder: 'Garage Untel',
     list: 'listeIntervenants',
     value: existant ? (existant.lieu || '') : '',
   });
   const suggestions = $('#listeIntervenants');
   suggestions.textContent = '';
-  for (const x of intervenants()) {
-    if (x.cle !== 'aucun') suggestions.appendChild(el('option', { value: x.libelle }));
-  }
+  for (const g of intervenants().garages) suggestions.appendChild(el('option', { value: g.libelle }));
+
+  let parQui = existant ? (existant.parQui || '') : '';
+  const puceMoi = el('button', { classe: 'puce', type: 'button', texte: 'Moi' });
+  const pucePro = el('button', { classe: 'puce', type: 'button', texte: 'Un professionnel' });
+
+  const majParQui = () => {
+    puceMoi.className = 'puce' + (parQui === 'moi' ? ' actif' : '');
+    pucePro.className = 'puce' + (parQui === 'pro' ? ' actif' : '');
+    cGarage.bloc.hidden = parQui !== 'pro';   // le nom n'a de sens que pour un pro
+  };
+  const choisir = valeur => {
+    parQui = (parQui === valeur) ? '' : valeur;   // réappuyer annule
+    if (parQui !== 'pro') cGarage.entree.value = '';
+    majParQui();
+  };
+  puceMoi.addEventListener('click', () => { choisir('moi'); vibrer(8); });
+  pucePro.addEventListener('click', () => { choisir('pro'); vibrer(8); });
+  majParQui();
+
+  const blocParQui = el('div', { classe: 'champ' }, [
+    el('label', { texte: 'Fait par' }),
+    el('div', { classe: 'puces' }, [puceMoi, pucePro]),
+  ]);
   const cNotes = champ('iNotes', 'Notes', { balise: 'textarea', placeholder: 'Facultatif',
     value: existant ? (existant.notes || '') : '' });
   if (existant && existant.notes) cNotes.entree.value = existant.notes;
@@ -1389,7 +1546,8 @@ function ouvrirIntervention(idExistant, reglePrecochee) {
       km: parseInt(String(cKm.entree.value).replace(/[^\d]/g, ''), 10) || 0,
       coutTotal: total,
       resteACharge: chargeSaisie === '' ? total : nombre(chargeSaisie),
-      lieu: cLieu.entree.value.trim(),
+      parQui,
+      lieu: parQui === 'pro' ? cGarage.entree.value.trim() : '',
       notes: cNotes.entree.value.trim(),
       postes: [...postesChoisis],
       resolueLe: existant ? (existant.resolueLe || null) : null,
@@ -1416,7 +1574,8 @@ function ouvrirIntervention(idExistant, reglePrecochee) {
     cCategorie.bloc,
     el('div', { classe: 'champ-duo' }, [cTotal.bloc, cCharge.bloc]),
     el('p', { classe: 'aide', texte: 'Laisse « payé par moi » vide si tu as tout payé. En cas de sinistre, mets ta franchise.' }),
-    cLieu.bloc,
+    blocParQui,
+    cGarage.bloc,
     el('div', { classe: 'champ' }, [
       el('label', { texte: 'Postes remis à zéro' }),
       puces,
@@ -1447,7 +1606,7 @@ function ouvrirDetailIntervention(id) {
     i.km > 0 ? el('li', null, [el('span', { texte: 'Compteur' }), el('span', { texte: nombreKm(i.km) + ' km' })]) : null,
     i.coutTotal ? el('li', null, [el('span', { texte: 'Facture' }), el('span', { texte: euros(i.coutTotal) })]) : null,
     (i.resteACharge || i.coutTotal) ? el('li', null, [el('span', { texte: 'Payé par moi' }), el('span', { texte: euros(i.resteACharge) })]) : null,
-    i.lieu ? el('li', null, [el('span', { texte: 'Fait par' }), el('span', { texte: i.lieu })]) : null,
+    auteur(i) ? el('li', null, [el('span', { texte: 'Fait par' }), el('span', { texte: auteur(i) })]) : null,
     postes.length ? el('li', null, [el('span', { texte: 'Postes' }), el('span', { texte: postes.join(', ') })]) : null,
     i.categorie === 'panne' ? el('li', null, [el('span', { texte: 'État' }),
       el('span', { texte: i.resolueLe ? 'résolue' : 'en cours' })]) : null,
@@ -1601,7 +1760,7 @@ async function exporterCsv() {
     .slice().sort((a, b) => a.date < b.date ? -1 : 1)
     .map(i => [
       i.date, i.titre, categorie(i.categorie).libelle, i.km || '',
-      i.coutTotal || '', i.resteACharge || '', i.lieu || '',
+      i.coutTotal || '', i.resteACharge || '', auteur(i),
       (i.postes || []).join(' ; '), i.notes || '',
     ].map(echapperCsv).join(','));
   const contenu = '﻿' + [entetes.map(echapperCsv).join(',')].concat(lignes).join('\r\n');
@@ -1718,7 +1877,10 @@ function ajouterAuCarnet(donnees) {
       coutTotal: Number(i.coutTotal) || 0,
       resteACharge: (i.resteACharge === undefined || i.resteACharge === null)
         ? (Number(i.coutTotal) || 0) : (Number(i.resteACharge) || 0),
-      lieu: String(i.lieu || ''),
+      lieu: i.parQui === 'moi' ? '' : String(i.lieu || ''),
+      parQui: i.parQui === 'moi' || i.parQui === 'pro' ? i.parQui
+        : (MOTS_MOI.includes(sansAccents(String(i.lieu || '').trim())) ? 'moi'
+          : (String(i.lieu || '').trim() ? 'pro' : '')),
       notes: String(i.notes || ''),
       postes: Array.isArray(i.postes) ? i.postes.filter(p => etat.regles.some(r => r.cle === p)) : [],
       resolueLe: i.resolueLe || null,
@@ -1962,7 +2124,8 @@ function construirePrompt() {
     '  "date":"AAAA-MM-JJ", "titre":"court, en français",',
     '  "categorie":' + cats + ',',
     '  "km":entier, "coutTotal":nombre, "resteACharge":nombre,',
-    '  "lieu":"nom du garage ou Moi", "notes":"détails, hypothèses, pièces à vérifier",',
+    '  "parQui":"moi" ou "pro", "lieu":"nom du garage, vide si c\'est moi",',
+    '  "notes":"détails, hypothèses, pièces à vérifier",',
     '  "postes":[liste parmi : ' + postes + ']',
     '}]}',
     '',
@@ -2168,6 +2331,7 @@ function brancherInterface() {
 
   $('#blocCompteur').addEventListener('click', () => ouvrirCompteur());
   $('#btnMiseAJour').addEventListener('click', forcerMiseAJour);
+  $('#btnIntervenants').addEventListener('click', ouvrirIntervenants);
   $('#ouvrirFiche').addEventListener('click', ouvrirFiche);
   $('#btnTousPneus').addEventListener('click', ouvrirQuatrePressions);
   $('#btnPressionsCible').addEventListener('click', ouvrirPressionsCible);

@@ -1,7 +1,7 @@
 /* Réseau d'abord, cache en secours : l'application se met à jour dès qu'il y a
    du réseau, et reste utilisable sans. Incrémenter CACHE à chaque changement
    de la liste FICHIERS. */
-const CACHE = 'carnet-v5';
+const CACHE = 'carnet-v6';
 const FICHIERS = [
   './',
   './index.html',

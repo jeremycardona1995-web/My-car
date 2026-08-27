@@ -10,9 +10,7 @@ sans réseau, sans compte et sans serveur.
   la liste des postes classés par urgence : en retard, bientôt, à jour, jamais
   renseignés.
 - **Carnet** — l'historique complet, groupé par année, filtrable par catégorie
-  et par intervenant — la liste des garages se déduit du carnet lui-même, les
-  variantes d'orthographe d'un même nom étant regroupées — et interrogeable
-  par un champ de recherche, avec la distinction entre le
+  et par intervenant, et interrogeable par un champ de recherche, avec la distinction entre le
   montant facturé et ce que vous avez réellement payé. La recherche porte sur
   l'intitulé, les notes, le garage, la catégorie, les postes remis à zéro, la
   date et les montants ; elle ignore les accents et la casse, exige que tous
@@ -22,6 +20,13 @@ sans réseau, sans compte et sans serveur.
   un sous-gonflage ou une usure proche de la limite légale.
 - **Voiture** — la fiche du véhicule, la courbe du kilométrage, les dépenses par
   an, la liste des postes suivis, l'import assisté par IA et la sauvegarde.
+
+Chaque intervention porte deux informations distinctes : sa **nature** — faite
+par soi ou par un professionnel — et, pour un professionnel, le **nom du
+garage**. La rangée de filtres du carnet reste donc de taille fixe (tous, moi,
+en garage, et une quatrième puce qui ouvre la liste complète), quel que soit le
+nombre de garages fréquentés. *Voiture → Intervenants* donne pour chacun le
+nombre d'interventions, le total dépensé et la dernière visite.
 
 Une intervention rangée dans la catégorie **Panne** reste affichée en tête de
 l'écran du jour tant qu'elle n'a pas été déclarée résolue.
