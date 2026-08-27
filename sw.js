@@ -1,7 +1,7 @@
 /* Réseau d'abord, cache en secours : l'application se met à jour dès qu'il y a
    du réseau, et reste utilisable sans. Incrémenter CACHE à chaque changement
    de la liste FICHIERS. */
-const CACHE = 'carnet-v4';
+const CACHE = 'carnet-v5';
 const FICHIERS = [
   './',
   './index.html',
@@ -15,7 +15,9 @@ const FICHIERS = [
 
 self.addEventListener('install', evenement => {
   evenement.waitUntil(
-    caches.open(CACHE).then(cache => cache.addAll(FICHIERS)).then(() => self.skipWaiting())
+    caches.open(CACHE)
+      .then(cache => cache.addAll(FICHIERS.map(f => new Request(f, { cache: 'reload' }))))
+      .then(() => self.skipWaiting())
   );
 });
 
@@ -31,8 +33,11 @@ self.addEventListener('fetch', evenement => {
   const requete = evenement.request;
   if (requete.method !== 'GET' || new URL(requete.url).origin !== self.location.origin) return;
 
+  // « cache: no-store » est indispensable : sans lui, le navigateur peut répondre
+  // à ce fetch depuis son propre cache HTTP — GitHub Pages le fixe à dix minutes —
+  // et le « réseau d'abord » sert alors une version périmée sans jamais le savoir.
   evenement.respondWith(
-    fetch(requete)
+    fetch(requete.url, { cache: 'no-store', credentials: 'same-origin' })
       .then(reponse => {
         if (reponse && reponse.ok) {
           const copie = reponse.clone();

@@ -20,8 +20,10 @@
   <main id="vueAujourdhui" class="vue">
     <header class="entete">
       <p class="entete-vehicule" id="enteteVehicule">Ta voiture</p>
-      <p class="compteur"><span id="compteurValeur">—</span><span class="compteur-unite">km</span></p>
-      <p class="entete-detail" id="compteurDetail">Aucun relevé enregistré</p>
+      <button class="bloc-compteur" id="blocCompteur" type="button">
+        <span class="compteur"><span id="compteurValeur">—</span><span class="compteur-unite">km</span></span>
+        <span class="entete-detail" id="compteurDetail">Aucun relevé enregistré</span>
+      </button>
     </header>
 
     <section id="blocPannes" hidden>
@@ -144,7 +146,7 @@
     <h2 class="titre-section">Sauvegarde</h2>
     <div class="carte">
       <button class="ligne ligne-bouton" id="btnExport">
-        <span>Exporter mes données</span><span class="ligne-detail">JSON</span>
+        <span>Exporter mes données</span><span class="ligne-detail" id="detailExport">JSON</span>
       </button>
       <button class="ligne ligne-bouton" id="btnExportCsv">
         <span>Exporter le carnet</span><span class="ligne-detail">CSV</span>
@@ -164,6 +166,14 @@
     </div>
     <p class="note">Tes données restent sur ce téléphone. Rien n'est envoyé, nulle part.
       Exporte de temps en temps : c'est la seule sauvegarde qui survit à tout.</p>
+    <h2 class="titre-section">Application</h2>
+    <div class="carte">
+      <button class="ligne ligne-bouton" id="btnMiseAJour">
+        <span>Chercher une mise à jour</span><span class="ligne-detail" id="detailVersion">—</span>
+      </button>
+    </div>
+    <p class="note">L'application se met à jour toute seule au lancement. Ce bouton vide le cache
+      et recharge, si jamais un ancien affichage s'accroche.</p>
     <p class="note note-version" id="noteVersion"></p>
     <input type="file" id="fichierImport" accept=".json,application/json,text/plain,text/*" hidden>
     <datalist id="listeIntervenants"></datalist>

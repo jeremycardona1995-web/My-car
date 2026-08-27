@@ -4,7 +4,7 @@
 
 'use strict';
 
-const VERSION_APPLI = '1.3.0';
+const VERSION_APPLI = '1.4.0';
 const VERSION_FORMAT = 1;
 const CLES = {
   vehicule: 'vehiculeV1',
@@ -468,7 +468,7 @@ function rendreAujourdhui() {
   }
 
   rendrePannes();
-  const echeances = calculerEcheances().concat(alertesPneus());
+  const echeances = calculerEcheances().concat(alertesPneus()).concat(alerteSauvegarde());
   const retard = echeances.filter(e => e.statut === 'retard');
   const proche = echeances.filter(e => e.statut === 'proche');
   const ajour = echeances.filter(e => e.statut === 'ajour');
@@ -1095,6 +1095,14 @@ function rendreVoiture() {
   rendreGrapheKm();
   rendreGrapheCout();
   rendreListeRegles();
+
+  const jours = etat.reglages.dernierExport ? joursDepuis(etat.reglages.dernierExport) : null;
+  const detail = $('#detailExport');
+  detail.textContent = jours === null ? 'jamais'
+    : jours <= 0 ? "aujourd'hui" : 'il y a ' + dureeLisible(jours);
+  detail.style.color = (jours === null || jours > EXPORT_APRES_JOURS) ? 'var(--danger)' : '';
+
+  $('#detailVersion').textContent = VERSION_APPLI;
   $('#noteVersion').textContent = 'Format de données v' + VERSION_FORMAT + ' · application ' + VERSION_APPLI;
 }
 
@@ -1248,6 +1256,7 @@ function ouvrirEcheance(e) {
         toast('Reporté au mois prochain');
       },
     }),
+    e.dateEcheance ? bouton('Ajouter à mon agenda', { action: () => ajouterAAgenda(e) }) : null,
     bouton('Ne plus suivre ce poste', {
       danger: true,
       action: () => {
@@ -1263,7 +1272,8 @@ function ouvrirEcheance(e) {
 
 /* ── Compteur ── */
 
-function ouvrirCompteur() {
+function ouvrirCompteur(options) {
+  const o = options || {};
   const actuel = kilometrageActuel();
   const c = champ('saisieKm', 'Compteur', {
     type: 'text', inputmode: 'numeric', enterkeyhint: 'done',
@@ -1276,7 +1286,9 @@ function ouvrirCompteur() {
     const dernier = dernierReleve();
     if (dernier && km < dernier.km) { toast('Plus bas que le dernier relevé (' + nombreKm(dernier.km) + ' km)'); return; }
     etat.releves.push({ id: identifiant(), date: versIso(aujourdhui()), km, origine: 'saisie' });
+    delete etat.reglages.compteurReporteJusqua;
     enregistrer('releves');
+    enregistrer('reglages');
     fermerFeuille();
     rendreTout();
     vibrer(15);
@@ -1285,11 +1297,13 @@ function ouvrirCompteur() {
 
   c.entree.addEventListener('keydown', ev => { if (ev.key === 'Enter') { ev.preventDefault(); valider(); } });
 
-  ouvrirFeuille('Relevé du compteur', 'Aujourd\'hui, ' + dateCourte(versIso(aujourdhui())), [
-    c.bloc,
-    bouton('Enregistrer', { principal: true, action: valider }),
-  ]);
-  setTimeout(() => c.entree.focus(), 60);
+  ouvrirFeuille(o.titre || 'Relevé du compteur',
+    o.sousTitre || 'Aujourd\'hui, ' + dateCourte(versIso(aujourdhui())), [
+      c.bloc,
+      bouton('Enregistrer', { principal: true, action: valider }),
+      o.secondaire || null,
+    ]);
+  if (!o.secondaire) setTimeout(() => c.entree.focus(), 60);
 }
 
 /* ── Intervention : création et modification ── */
@@ -1566,8 +1580,14 @@ async function partagerOuTelecharger(contenu, nom, type) {
 async function exporterJson() {
   const contenu = JSON.stringify(construireExport(), null, 2);
   const ok = await partagerOuTelecharger(contenu, nomFichier('json'), 'application/json');
-  if (ok) toast('Sauvegarde exportée');
-  else afficherTexteBrut(contenu);
+  if (ok) {
+    etat.reglages.dernierExport = versIso(aujourdhui());
+    enregistrer('reglages');
+    rendreTout();
+    toast('Sauvegarde exportée');
+  } else {
+    afficherTexteBrut(contenu);
+  }
 }
 
 function echapperCsv(valeur) {
@@ -1769,6 +1789,151 @@ function confirmerEffacement() {
     }),
     bouton('Annuler', { action: fermerFeuille }),
   ]);
+}
+
+/* ─────────────── Relevé réclamé et sauvegarde ─────────────── */
+
+const RELEVE_APRES_JOURS = 30;     // au-delà, l'estimation commence à dériver
+const EXPORT_APRES_JOURS = 90;
+
+function joursDepuis(iso) {
+  const d = versDate(iso);
+  if (!d) return null;
+  return Math.round((aujourdhui().getTime() - d.getTime()) / JOUR);
+}
+
+function aDesDonnees() {
+  return etat.interventions.length > 0 || etat.releves.length > 0;
+}
+
+/* La question ne se pose qu'une fois par semaine si on l'a repoussée : mieux
+   vaut un relevé donné de bon cœur qu'une boîte qu'on apprend à fermer. */
+function doitReclamerCompteur() {
+  if (!aDesDonnees()) return false;
+  const reporte = etat.reglages.compteurReporteJusqua;
+  if (reporte && versDate(reporte) && versDate(reporte).getTime() > aujourdhui().getTime()) return false;
+  const dernier = dernierReleve();
+  if (!dernier) return true;
+  return joursDepuis(dernier.date) >= RELEVE_APRES_JOURS;
+}
+
+function reclamerCompteur() {
+  const dernier = dernierReleve();
+  const jours = dernier ? joursDepuis(dernier.date) : null;
+  const sous = dernier
+    ? 'Dernier relevé il y a ' + dureeLisible(jours) + '. Depuis, tout est estimé.'
+    : 'Aucun relevé : les échéances kilométriques ne peuvent pas se calculer.';
+
+  ouvrirCompteur({
+    titre: 'Où en est le compteur ?',
+    sousTitre: sous,
+    secondaire: bouton('Plus tard', {
+      action: () => {
+        etat.reglages.compteurReporteJusqua = versIso(ajouterJours(aujourdhui(), 7));
+        enregistrer('reglages');
+        fermerFeuille();
+      },
+    }),
+  });
+}
+
+function ajouterJours(date, n) {
+  const d = new Date(date.getTime());
+  d.setDate(d.getDate() + n);
+  return d;
+}
+
+/* La sauvegarde vieillit comme une échéance : elle en prend la forme. */
+function alerteSauvegarde() {
+  if (!aDesDonnees() || etat.interventions.length < 3) return [];
+  const dernier = etat.reglages.dernierExport;
+  const jours = dernier ? joursDepuis(dernier) : null;
+  if (jours !== null && jours < EXPORT_APRES_JOURS) return [];
+
+  return [{
+    regle: { cle: 'sauvegarde', libelle: 'Sauvegarde' },
+    statut: jours === null ? 'proche' : (jours > EXPORT_APRES_JOURS * 2 ? 'retard' : 'proche'),
+    fraction: 1,
+    texte: jours === null
+      ? 'Jamais exportée — le téléphone peut vider ce stockage'
+      : 'Dernier export il y a ' + dureeLisible(jours),
+    action: () => { allerA('Voiture'); setTimeout(exporterJson, 250); },
+  }];
+}
+
+/* ─────────────── Agenda ─────────────── */
+
+function echapperIcs(texte) {
+  return String(texte || '')
+    .replace(/\\/g, '\\\\')
+    .replace(/;/g, '\\;')
+    .replace(/,/g, '\\,')
+    .replace(/\r?\n/g, '\\n');
+}
+
+function dateIcs(date) {
+  const p = n => String(n).padStart(2, '0');
+  return date.getFullYear() + p(date.getMonth() + 1) + p(date.getDate());
+}
+
+/* Événement d'une journée entière, avec un rappel une semaine avant : sans
+   notifications, l'agenda du téléphone est le seul à pouvoir prévenir. */
+function construireIcs(titre, description, dateIso, identifiantEvenement) {
+  const brute = versDate(dateIso);
+  if (!brute) return null;
+  // Une échéance déjà dépassée ne se note pas dans le passé : on la pose devant.
+  const minimum = ajouterJours(aujourdhui(), 3);
+  const debut = brute.getTime() < minimum.getTime() ? minimum : brute;
+  const fin = ajouterJours(debut, 1);
+  const joursAvant = Math.round((debut.getTime() - aujourdhui().getTime()) / JOUR);
+  const rappel = joursAvant > 8 ? '-P7D' : '-P1D';
+  const horodatage = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+
+  const lignes = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//Carnet d\'entretien//FR',
+    'CALSCALE:GREGORIAN',
+    'METHOD:PUBLISH',
+    'BEGIN:VEVENT',
+    'UID:' + identifiantEvenement + '@carnet-entretien',
+    'DTSTAMP:' + horodatage,
+    'DTSTART;VALUE=DATE:' + dateIcs(debut),
+    'DTEND;VALUE=DATE:' + dateIcs(fin),
+    'SUMMARY:' + echapperIcs(titre),
+    'DESCRIPTION:' + echapperIcs(description),
+    'TRANSP:TRANSPARENT',
+    'BEGIN:VALARM',
+    'TRIGGER:' + rappel,
+    'ACTION:DISPLAY',
+    'DESCRIPTION:' + echapperIcs(titre),
+    'END:VALARM',
+    'END:VEVENT',
+    'END:VCALENDAR',
+  ].join('\r\n') + '\r\n';
+
+  return { contenu: lignes, date: versIso(debut) };
+}
+
+async function ajouterAAgenda(echeance) {
+  const v = etat.vehicule || {};
+  const voiture = [v.marque, v.modele].filter(Boolean).join(' ') || 'Voiture';
+  const titre = voiture + ' — ' + echeance.regle.libelle;
+  const description = [
+    echeance.texte,
+    echeance.fait ? 'Dernière fois : ' + dateCourte(echeance.fait.date)
+      + (echeance.fait.km ? ' à ' + nombreKm(echeance.fait.km) + ' km' : '') : null,
+    'Ajouté depuis le carnet d\'entretien.',
+  ].filter(Boolean).join('\n');
+
+  const evenement = construireIcs(titre, description, echeance.dateEcheance,
+    (etat.vehicule && etat.vehicule.id ? etat.vehicule.id : 'carnet') + '-' + echeance.regle.cle);
+  if (!evenement) { toast('Cette échéance n\'a pas de date'); return; }
+
+  const nom = 'echeance-' + echeance.regle.cle + '.ics';
+  const ok = await partagerOuTelecharger(evenement.contenu, nom, 'text/calendar');
+  if (ok) toast('Rendez-vous au ' + dateCourte(evenement.date) + ' : ouvre le fichier');
+  else afficherTexteBrut(evenement.contenu);
 }
 
 /* ─────────────── Dicter à une IA ─────────────── */
@@ -2001,6 +2166,8 @@ function brancherInterface() {
     champRecherche.focus();
   });
 
+  $('#blocCompteur').addEventListener('click', () => ouvrirCompteur());
+  $('#btnMiseAJour').addEventListener('click', forcerMiseAJour);
   $('#ouvrirFiche').addEventListener('click', ouvrirFiche);
   $('#btnTousPneus').addEventListener('click', ouvrirQuatrePressions);
   $('#btnPressionsCible').addEventListener('click', ouvrirPressionsCible);
@@ -2031,17 +2198,57 @@ function demarrer() {
 
   if (!etat.reglages.tutoVu && etat.interventions.length === 0) {
     setTimeout(ouvrirTutoriel, 500);
+  } else if (doitReclamerCompteur()) {
+    setTimeout(reclamerCompteur, 700);
   }
 
   try {
     if (navigator.storage && navigator.storage.persist) navigator.storage.persist();
   } catch (e) { /* non supporté */ }
 
-  if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js').catch(() => { /* hors ligne indisponible */ });
-    });
-  }
+  brancherServiceWorker();
+}
+
+/* Une application installée garde sa page en mémoire : le nouveau code peut être
+   téléchargé sans jamais s'afficher. On recharge une fois, et une seule, quand un
+   service worker fraîchement installé prend la main — sauf à la toute première
+   installation, où il n'y a rien à remplacer. */
+function brancherServiceWorker() {
+  if (!('serviceWorker' in navigator)) return;
+  const premiereFois = !navigator.serviceWorker.controller;
+  let recharge = false;
+
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (premiereFois || recharge) return;
+    recharge = true;
+    location.reload();
+  });
+
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js')
+      .then(enregistrement => {
+        enregistrement.update();
+        // Une application ouverte des jours durant ne repasse jamais par « load ».
+        setInterval(() => enregistrement.update(), 3600000);
+      })
+      .catch(() => { /* hors ligne indisponible */ });
+  });
+}
+
+/* Dernier recours quand un téléphone reste bloqué sur une vieille version. */
+async function forcerMiseAJour() {
+  toast('Recherche d\'une mise à jour…');
+  try {
+    if ('caches' in window) {
+      const noms = await caches.keys();
+      await Promise.all(noms.map(n => caches.delete(n)));
+    }
+    if ('serviceWorker' in navigator) {
+      const enregistrements = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(enregistrements.map(e => e.unregister()));
+    }
+  } catch (e) { /* stockage indisponible */ }
+  setTimeout(() => location.reload(true), 400);
 }
 
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', demarrer);

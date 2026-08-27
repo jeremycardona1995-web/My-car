@@ -384,3 +384,12 @@ mark {
   background: var(--accent-sourd); color: var(--accent);
   box-shadow: inset 0 0 0 1.5px var(--accent);
 }
+
+/* Le compteur est aussi le bouton qui sert à le mettre à jour. */
+.bloc-compteur {
+  display: block; width: 100%; text-align: left;
+  padding: 2px 4px 6px; margin: 0 -4px; border-radius: 14px;
+}
+.bloc-compteur:active { background: var(--surface); }
+.bloc-compteur .compteur { display: block; }
+.bloc-compteur .entete-detail { display: block; }

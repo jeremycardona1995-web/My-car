@@ -26,6 +26,16 @@ sans réseau, sans compte et sans serveur.
 Une intervention rangée dans la catégorie **Panne** reste affichée en tête de
 l'écran du jour tant qu'elle n'a pas été déclarée résolue.
 
+Le kilométrage du jour étant extrapolé entre deux relevés, l'application
+réclame le compteur au lancement dès que le dernier relevé a plus d'un mois ;
+« Plus tard » repousse la question d'une semaine. Le compteur affiché est
+lui-même le bouton de saisie.
+
+Chaque échéance datée peut être envoyée dans l'agenda du téléphone : le fichier
+`.ics` produit contient un événement d'une journée avec un rappel une semaine
+avant, ou la veille si l'échéance est proche. Une échéance déjà dépassée est
+posée trois jours devant, jamais dans le passé.
+
 Certains postes — plaquettes, pneus — sont marqués « au besoin » : ils sont
 suivis dans l'historique mais ne déclenchent aucun compte à rebours, puisqu'on
 les remplace à l'usure et non à date fixe.
@@ -45,6 +55,8 @@ d'immatriculation, de numéro de série, de facture ni de kilométrage. Le
 Le stockage d'un navigateur peut être vidé par le système, notamment sur iPhone
 quand une application installée reste plusieurs semaines sans être ouverte.
 **Exportez régulièrement** : c'est la seule sauvegarde qui survit à tout.
+L'application le rappelle d'elle-même au bout de trois mois sans export, et la
+date du dernier passe en rouge dans l'écran Voiture.
 
 ## Installation sur le téléphone
 
@@ -107,6 +119,14 @@ python3 -c "import json; json.load(open('manifest.webmanifest'))"
 Le service worker sert le réseau en priorité et retombe sur le cache. **Si vous
 modifiez la liste `FICHIERS` de `sw.js`, incrémentez la constante `CACHE`**,
 sinon les téléphones conservent l'ancienne version.
+
+Ses requêtes réseau portent `cache: 'no-store'` : sans cela le navigateur peut y
+répondre depuis son propre cache HTTP — GitHub Pages le fixe à dix minutes — et
+le « réseau d'abord » sert une version périmée sans le savoir. Une application
+installée gardant sa page en mémoire, la page se recharge une fois lorsqu'un
+service worker fraîchement installé prend la main. En dernier recours, *Voiture
+→ Chercher une mise à jour* vide les caches et recharge ; le numéro de version
+affiché à côté permet de vérifier ce qui tourne réellement.
 
 ## Réglages des échéances
 
