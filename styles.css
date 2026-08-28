@@ -211,7 +211,10 @@ dialog.feuille {
   padding: 8px 18px calc(20px + env(safe-area-inset-bottom));
   max-height: 90dvh; overflow-y: auto; overscroll-behavior: contain;
 }
-dialog.feuille::backdrop { background: rgba(0,0,0,.62); backdrop-filter: blur(3px); }
+/* L'opacité du voile passe par une variable pour suivre le doigt pendant le
+   glissement : un ::backdrop ne se style pas depuis le script. */
+dialog.feuille { --voile: .62; }
+dialog.feuille::backdrop { background: rgba(0, 0, 0, var(--voile)); backdrop-filter: blur(3px); }
 
 /* La feuille monte depuis le bas de l'écran et redescend par le même chemin :
    un déplacement de 14 px passait inaperçu, et la fermeture était sèche. */
@@ -230,7 +233,16 @@ dialog.feuille.ferme[open]::backdrop { animation: voile-sort 190ms ease forwards
 #feuilleContenu.change { animation: contenu-entre 160ms ease; }
 @keyframes contenu-entre { from { opacity: 0; transform: translateY(6px); } }
 
-.poignee { width: 40px; height: 4px; border-radius: 2px; background: var(--bordure); margin: 4px auto 14px; }
+/* Bande de préhension : la poignée seule fait 4 px de haut, un doigt n'y arrive
+   pas. Elle occupe toute la largeur et refuse le défilement, pour que le geste
+   de fermeture y soit toujours capté. */
+.prise {
+  display: block; width: 100%; padding: 8px 0 12px;
+  touch-action: none; cursor: grab;
+}
+.poignee { display: block; width: 40px; height: 4px; border-radius: 2px; background: var(--bordure); margin: 0 auto; }
+dialog.feuille h2, dialog.feuille .sous-titre { touch-action: none; }
+dialog.feuille.revient { transition: transform 200ms cubic-bezier(.22,.85,.3,1); }
 .feuille h2 { margin: 0 0 4px; font-size: 21px; font-weight: 650; letter-spacing: -.01em; }
 .feuille .sous-titre { margin: 0 0 16px; font-size: 14.5px; color: var(--attenue); }
 

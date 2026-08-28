@@ -892,7 +892,9 @@ function ouvrirFeuille(titre, sousTitre, contenu) {
   if (sousTitre) zone.appendChild(el('p', { classe: 'sous-titre', texte: sousTitre }));
   for (const c of [].concat(contenu)) if (c) zone.appendChild(c);
 
-  f.classList.remove('ferme');
+  f.classList.remove('ferme', 'revient');
+  f.style.transform = '';
+  f.style.removeProperty('--voile');
   if (!f.open) {
     f.showModal();
   } else if (!mouvementReduit()) {
@@ -918,6 +920,8 @@ function fermerFeuille() {
     fait = true;
     f.removeEventListener('animationend', surFin);
     f.classList.remove('ferme');
+    f.style.transform = '';
+    f.style.removeProperty('--voile');
     f.close();
   };
   // Le fondu du contenu remonte jusqu'au dialogue : sans ce filtre, il fermerait
@@ -1536,6 +1540,132 @@ async function copierTexte(texte, message) {
   afficherTexteBrut(texte);
 }
 
+/* ─────────────── Fermer une feuille au doigt ─────────────── */
+
+const SEUIL_FERMETURE = 110;      // px parcourus vers le bas
+const VITESSE_FERMETURE = 0.5;    // px/ms : un geste vif ferme plus tôt
+const VOILE_PLEIN = 0.62;
+
+/* Ferme en repartant de l'endroit où le doigt a lâché, sans saut. */
+function fermerFeuilleDepuis(decalage) {
+  const f = $('#feuilleGenerique');
+  if (!f.open || f.classList.contains('ferme')) return;
+
+  const hauteur = f.getBoundingClientRect().height || 600;
+  const achever = () => {
+    f.classList.remove('ferme');
+    f.style.transform = '';
+    f.style.removeProperty('--voile');
+    f.close();
+  };
+
+  if (mouvementReduit()) { achever(); return; }
+
+  f.classList.add('ferme');   // le voile s'efface par sa propre animation
+  const reste = Math.max(0, 1 - decalage / hauteur);
+  const animation = f.animate(
+    [{ transform: 'translateY(' + decalage.toFixed(1) + 'px)' },
+     { transform: 'translateY(100%)' }],
+    { duration: Math.max(110, Math.round(190 * reste)), easing: 'cubic-bezier(.4,0,.9,.5)', fill: 'forwards' });
+
+  let fait = false;
+  const fin = () => { if (fait) return; fait = true; animation.cancel(); achever(); };
+  animation.onfinish = fin;
+  setTimeout(fin, 320);
+}
+
+function brancherGlissementFeuille() {
+  const f = $('#feuilleGenerique');
+  let depart = null, decalage = 0, verrou = null, debut = 0, engage = false;
+
+  const zonePrise = cible => !!(cible && cible.closest
+    && cible.closest('.prise, dialog.feuille > #feuilleContenu > h2, dialog.feuille .sous-titre'));
+  const champDeSaisie = cible => !!(cible && cible.closest && cible.closest('input, textarea, select'));
+
+  f.addEventListener('pointerdown', ev => {
+    if (f.classList.contains('ferme')) return;
+    if (ev.pointerType === 'mouse' && ev.button !== 0) return;
+    if (champDeSaisie(ev.target)) return;
+    // Depuis le contenu, le geste n'est pris que si l'on est déjà en haut :
+    // sinon on volerait le défilement.
+    const prise = zonePrise(ev.target);
+    if (!prise && f.scrollTop > 0) return;
+
+    depart = { x: ev.clientX, y: ev.clientY, prise };
+    debut = Date.now();
+    decalage = 0;
+    verrou = null;
+    engage = false;
+  });
+
+  f.addEventListener('pointermove', ev => {
+    if (!depart) return;
+    const dx = ev.clientX - depart.x;
+    const dy = ev.clientY - depart.y;
+
+    if (verrou === null) {
+      if (Math.abs(dx) < 6 && Math.abs(dy) < 6) return;
+      verrou = Math.abs(dy) > Math.abs(dx) ? 'y' : 'x';
+      if (verrou === 'x') { depart = null; return; }   // geste horizontal : on rend la main
+      try { f.setPointerCapture(ev.pointerId); } catch (e) { /* capture refusée */ }
+    }
+
+    // Le contenu a pu se remettre à défiler entre-temps.
+    if (!depart.prise && f.scrollTop > 0) { annuler(); return; }
+
+    decalage = dy > 0 ? dy : dy / 4;   // vers le haut, la feuille résiste
+    engage = true;
+    if (ev.cancelable) ev.preventDefault();
+
+    f.style.transform = 'translateY(' + Math.max(0, decalage).toFixed(1) + 'px)';
+    const hauteur = f.getBoundingClientRect().height || 600;
+    const part = Math.max(0, Math.min(1, Math.max(0, decalage) / hauteur));
+    f.style.setProperty('--voile', (VOILE_PLEIN * (1 - part * 0.85)).toFixed(3));
+  }, { passive: false });
+
+  function annuler() {
+    depart = null;
+    verrou = null;
+    if (!engage) return;
+    engage = false;
+    f.classList.add('revient');
+    f.style.transform = '';
+    f.style.removeProperty('--voile');
+    setTimeout(() => f.classList.remove('revient'), 220);
+  }
+
+  const relacher = () => {
+    if (!depart) return;
+    const parcouru = decalage;
+    const vitesse = parcouru / Math.max(1, Date.now() - debut);
+    // 60 px minimum même sur un geste vif : sous ce seuil c'est un frôlement.
+    const partant = parcouru > SEUIL_FERMETURE
+      || (parcouru > 60 && vitesse > VITESSE_FERMETURE);
+
+    depart = null;
+    verrou = null;
+    if (!engage) return;
+    engage = false;
+
+    if (partant) {
+      f.classList.remove('revient');
+      fermerFeuilleDepuis(parcouru);
+    } else {
+      f.classList.add('revient');
+      f.style.transform = '';
+      f.style.removeProperty('--voile');
+      setTimeout(() => f.classList.remove('revient'), 220);
+    }
+  };
+
+  f.addEventListener('pointerup', relacher);
+  f.addEventListener('pointercancel', annuler);
+  // Un geste ne doit pas déclencher le bouton sous le doigt.
+  f.addEventListener('click', ev => {
+    if (Math.abs(decalage) > 6) { ev.preventDefault(); ev.stopPropagation(); decalage = 0; }
+  }, true);
+}
+
 /* ─────────────── Glissement sur une échéance ─────────────── */
 
 const SEUIL_GLISSEMENT = 68;
@@ -1725,6 +1855,8 @@ function brancherInterface() {
   feuille.addEventListener('click', ev => {
     if (ev.target === feuille) fermerFeuille();
   });
+  brancherGlissementFeuille();
+
   // Échap et le geste « retour » ferment nativement, donc sans animation.
   feuille.addEventListener('cancel', ev => {
     ev.preventDefault();

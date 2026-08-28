@@ -120,6 +120,14 @@ du flux sans transition possible, `fermerFeuille()` joue la sortie puis ferme,
 avec un garde-fou si l'animation ne se déclenche pas ; la touche Échap et le
 geste « retour » passent par le même chemin via l'événement `cancel`.
 
+Une feuille se ferme aussi **en la tirant vers le bas**. Le geste est pris
+depuis la bande de préhension — poignée, titre, sous-titre — ou depuis le
+contenu lorsqu'il est déjà en haut, faute de quoi il volerait le défilement. La
+feuille suit le doigt, le voile s'éclaircit à mesure, et elle repart de
+l'endroit où le doigt a lâché : au-delà de 110 px, ou de 60 px lancés à plus de
+0,5 px/ms, elle s'en va ; en deçà elle revient en place. Un geste horizontal, ou
+parti d'un champ de saisie, est ignoré.
+
 Enchaîner deux feuilles ne fait pas resauter la feuille : seul son contenu
 change en fondu. Les vues se remplacent en 170 ms, le toast sort en 180 ms.
 
