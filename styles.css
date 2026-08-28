@@ -212,8 +212,23 @@ dialog.feuille {
   max-height: 90dvh; overflow-y: auto; overscroll-behavior: contain;
 }
 dialog.feuille::backdrop { background: rgba(0,0,0,.62); backdrop-filter: blur(3px); }
-dialog.feuille[open] { animation: monte 220ms cubic-bezier(.22,.8,.3,1); }
-@keyframes monte { from { transform: translateY(14px); opacity: .4; } }
+
+/* La feuille monte depuis le bas de l'écran et redescend par le même chemin :
+   un déplacement de 14 px passait inaperçu, et la fermeture était sèche. */
+dialog.feuille[open] { animation: feuille-monte 240ms cubic-bezier(.22,.85,.3,1); }
+dialog.feuille[open]::backdrop { animation: voile-entre 240ms ease; }
+dialog.feuille.ferme[open] { animation: feuille-descend 190ms cubic-bezier(.4,0,.9,.5) forwards; }
+dialog.feuille.ferme[open]::backdrop { animation: voile-sort 190ms ease forwards; }
+
+@keyframes feuille-monte  { from { transform: translateY(100%); } }
+@keyframes feuille-descend { to  { transform: translateY(100%); } }
+@keyframes voile-entre { from { opacity: 0; } }
+@keyframes voile-sort  { to   { opacity: 0; } }
+
+/* Enchaînement d'une feuille à l'autre : le contenu change en fondu, la feuille
+   elle-même ne rejoue pas son entrée. */
+#feuilleContenu.change { animation: contenu-entre 160ms ease; }
+@keyframes contenu-entre { from { opacity: 0; transform: translateY(6px); } }
 
 .poignee { width: 40px; height: 4px; border-radius: 2px; background: var(--bordure); margin: 4px auto 14px; }
 .feuille h2 { margin: 0 0 4px; font-size: 21px; font-weight: 650; letter-spacing: -.01em; }
@@ -259,6 +274,10 @@ dialog.feuille[open] { animation: monte 220ms cubic-bezier(.22,.8,.3,1); }
 .zone-export { width: 100%; min-height: 120px; font-family: ui-monospace, monospace; font-size: 12px; }
 
 /* ─────────────── Toast ─────────────── */
+/* Changement d'onglet : les vues se remplacent en un fondu très court. */
+.vue { animation: vue-entre 170ms ease; }
+@keyframes vue-entre { from { opacity: 0; transform: translateY(5px); } }
+
 .toast {
   position: fixed; z-index: 60; left: 50%; transform: translateX(-50%);
   bottom: calc(152px + env(safe-area-inset-bottom));
@@ -269,7 +288,9 @@ dialog.feuille[open] { animation: monte 220ms cubic-bezier(.22,.8,.3,1); }
   box-shadow: 0 12px 34px rgba(0,0,0,.45);
   animation: toastEntre 200ms ease;
 }
+.toast.sort { animation: toastSort 180ms ease forwards; }
 @keyframes toastEntre { from { opacity: 0; transform: translate(-50%, 10px); } }
+@keyframes toastSort { to { opacity: 0; transform: translate(-50%, 8px); } }
 
 /* ─────────────── Petits écrans ─────────────── */
 @media (max-height: 730px) {
@@ -279,7 +300,12 @@ dialog.feuille[open] { animation: monte 220ms cubic-bezier(.22,.8,.3,1); }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  * { transition: none !important; animation: none !important; }
+  /* Le sélecteur universel ne couvre pas les pseudo-éléments : sans cette
+     seconde règle, le voile de la feuille continuait de s'animer. */
+  *, *::backdrop, *::before, *::after {
+    transition: none !important;
+    animation: none !important;
+  }
 }
 
 /* ─────────────── Accueil et mode d'emploi ─────────────── */

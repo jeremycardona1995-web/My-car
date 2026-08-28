@@ -41,12 +41,21 @@ function svgEl(balise, attrs, enfants) {
 const $ = s => document.querySelector(s);
 
 let minuterieToast = null;
+let sortieToast = null;
+
 function toast(message) {
   const t = $('#toast');
+  clearTimeout(minuterieToast);
+  clearTimeout(sortieToast);
+  t.classList.remove('sort');
   t.textContent = message;
   t.hidden = false;
-  clearTimeout(minuterieToast);
-  minuterieToast = setTimeout(() => { t.hidden = true; }, 2600);
+
+  minuterieToast = setTimeout(() => {
+    if (mouvementReduit()) { t.hidden = true; return; }
+    t.classList.add('sort');
+    sortieToast = setTimeout(() => { t.hidden = true; t.classList.remove('sort'); }, 190);
+  }, 2600);
 }
 
 function vibrer(ms) {
@@ -865,20 +874,59 @@ function rendreListeRegles() {
 
 /* ─────────────── Feuilles ─────────────── */
 
+/* Un seul endroit pour savoir si l'on a le droit d'animer. */
+function mouvementReduit() {
+  try {
+    return window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  } catch (e) {
+    return false;
+  }
+}
+
 function ouvrirFeuille(titre, sousTitre, contenu) {
+  const f = $('#feuilleGenerique');
+  const enchainement = f.open;
   const zone = $('#feuilleContenu');
   zone.textContent = '';
   if (titre) zone.appendChild(el('h2', { texte: titre }));
   if (sousTitre) zone.appendChild(el('p', { classe: 'sous-titre', texte: sousTitre }));
   for (const c of [].concat(contenu)) if (c) zone.appendChild(c);
-  const f = $('#feuilleGenerique');
-  if (!f.open) f.showModal();
+
+  f.classList.remove('ferme');
+  if (!f.open) {
+    f.showModal();
+  } else if (!mouvementReduit()) {
+    zone.classList.remove('change');
+    void zone.offsetWidth;          // redémarre l'animation sur un enchaînement
+    zone.classList.add('change');
+  }
   f.scrollTop = 0;
 }
 
+/* La fermeture d'un <dialog> retire l'élément du flux sans transition possible :
+   on joue la sortie d'abord, puis on ferme. Un garde-fou évite de rester ouvert
+   si l'animation ne se déclenche pas. */
 function fermerFeuille() {
   const f = $('#feuilleGenerique');
-  if (f.open) f.close();
+  if (!f.open || f.classList.contains('ferme')) return;
+
+  if (mouvementReduit()) { f.close(); return; }
+
+  let fait = false;
+  const achever = () => {
+    if (fait) return;
+    fait = true;
+    f.removeEventListener('animationend', surFin);
+    f.classList.remove('ferme');
+    f.close();
+  };
+  // Le fondu du contenu remonte jusqu'au dialogue : sans ce filtre, il fermerait
+  // la feuille avant la fin de sa propre descente.
+  const surFin = ev => { if (ev.target === f) achever(); };
+
+  f.addEventListener('animationend', surFin);
+  setTimeout(achever, 320);
+  f.classList.add('ferme');
 }
 
 function bouton(libelle, options) {
@@ -1675,7 +1723,12 @@ function brancherInterface() {
   // Fermeture de la feuille par appui hors de son contenu.
   const feuille = $('#feuilleGenerique');
   feuille.addEventListener('click', ev => {
-    if (ev.target === feuille) feuille.close();
+    if (ev.target === feuille) fermerFeuille();
+  });
+  // Échap et le geste « retour » ferment nativement, donc sans animation.
+  feuille.addEventListener('cancel', ev => {
+    ev.preventDefault();
+    fermerFeuille();
   });
 }
 

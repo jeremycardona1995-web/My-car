@@ -112,6 +112,21 @@ Un identifiant déjà présent est ignoré, si bien qu'un même fragment import�
 fois ne crée pas de doublon. C'est ce format que produit le prompt de
 *Voiture → Dicter à une IA*.
 
+## Mouvement
+
+Les feuilles montent depuis le bas en 240 ms et redescendent par le même chemin
+en 190 ms, le voile suivant. Comme la fermeture d'un `<dialog>` retire l'élément
+du flux sans transition possible, `fermerFeuille()` joue la sortie puis ferme,
+avec un garde-fou si l'animation ne se déclenche pas ; la touche Échap et le
+geste « retour » passent par le même chemin via l'événement `cancel`.
+
+Enchaîner deux feuilles ne fait pas resauter la feuille : seul son contenu
+change en fondu. Les vues se remplacent en 170 ms, le toast sort en 180 ms.
+
+Sous `prefers-reduced-motion`, tout est coupé — pseudo-éléments compris, le
+sélecteur universel ne les couvrant pas — et les fermetures redeviennent
+immédiates.
+
 ## Développement
 
 Aucune dépendance, aucune compilation, aucun `npm`. Quatre fichiers :
