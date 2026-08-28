@@ -169,6 +169,46 @@ function positionsVehicule() {
   return (etat.vehicule && Number(etat.vehicule.roues) === 2) ? POSITIONS_DEUX : POSITIONS_QUATRE;
 }
 
+/* Un pneu sain perd environ 0,1 bar par mois. Au-delà de 0,25 il fuit, et
+   l'écart de température fausse la mesure d'environ 0,1 bar pour 10 °C : le
+   seuil est volontairement large pour ne pas crier au loup en hiver. */
+const PERTE_NORMALE = 0.10;
+const PERTE_SUSPECTE = 0.25;
+const DELAI_MINIMAL = 20;      // jours : en dessous, la mesure ne veut rien dire
+
+/* Ce que le pneu a perdu depuis le dernier gonflage : la pression laissée la
+   fois d'avant, moins celle relevée avant de regonfler. */
+function perteMensuelle(clePosition) {
+  const releves = lesPneus()
+    .filter(p => p && p.position === clePosition && versDate(p.date))
+    .sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
+
+  for (let i = releves.length - 1; i >= 1; i--) {
+    const apres = Number(releves[i].pressionAvant);
+    const avant = Number(releves[i - 1].pression);
+    if (!(apres > 0) || !(avant > 0)) continue;
+
+    const jours = (versDate(releves[i].date).getTime() - versDate(releves[i - 1].date).getTime()) / JOUR;
+    if (jours < DELAI_MINIMAL) continue;
+
+    const perte = Math.max(0, avant - apres);
+    return {
+      parMois: perte / (jours / 30.44),
+      perte,
+      jours: Math.round(jours),
+      depuis: releves[i - 1].date,
+      le: releves[i].date,
+    };
+  }
+  return null;
+}
+
+function statutPerte(parMois) {
+  if (parMois > PERTE_SUSPECTE) return 'retard';
+  if (parMois > PERTE_NORMALE * 1.5) return 'proche';
+  return 'ok';
+}
+
 const USURE_NEUF = 8;      // mm de gomme sur un pneu neuf
 const USURE_LIMITE = 1.6;  // limite légale
 const PRESSION_DEFAUT = 2.4;

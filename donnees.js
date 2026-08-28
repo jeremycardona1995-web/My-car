@@ -4,7 +4,7 @@
 
 'use strict';
 
-const VERSION_APPLI = '2.5.0';
+const VERSION_APPLI = '2.6.0';
 const VERSION_FORMAT = 1;
 const CLES = {
   vehicule: 'vehiculeV1',

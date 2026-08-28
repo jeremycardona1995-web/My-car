@@ -34,7 +34,10 @@ change le schéma des pneus, et ses pressions recommandées.
   les mots saisis soient présents, et surligne ce qu'elle a trouvé.
 - **Pneus** — les quatre roues vues du dessus ; on appuie sur l'une d'elles pour
   noter sa pression et l'épaisseur de gomme restante, et l'application signale
-  un sous-gonflage ou une usure proche de la limite légale.
+  un sous-gonflage ou une usure proche de la limite légale. En notant, sans y
+  être obligé, la pression **trouvée avant de regonfler**, on lui donne de quoi
+  mesurer ce que chaque pneu perd par mois — la pression laissée la fois d'avant
+  moins celle relevée aujourd'hui — et repérer celui qui fuit.
 - **Voiture** — la fiche du véhicule, la courbe du kilométrage, les dépenses par
   an, la liste des postes suivis, l'import assisté par IA et la sauvegarde.
 

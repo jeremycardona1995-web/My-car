@@ -444,13 +444,21 @@ function rendrePneus() {
   const renseignes = etats.filter(e => e.statut !== 'inconnu').length;
   const anormaux = etats.filter(e => e.statut === 'retard').length;
   const surveiller = etats.filter(e => e.statut === 'proche').length;
+  // Une fuite ne se voit pas dans la pression du jour : elle vient de se faire
+  // regonfler. Le résumé doit quand même la signaler.
+  const fuit = etats.find(e => {
+    const p = perteMensuelle(e.position.cle);
+    return p && statutPerte(p.parMois) !== 'ok';
+  });
+
   $('#pneusResume').textContent = !etat.vehicule
     ? 'Ajoute d\'abord un véhicule'
     : renseignes === 0
     ? 'Appuie sur un pneu pour le renseigner'
     : anormaux ? anormaux + (anormaux > 1 ? ' pneus anormaux' : ' pneu anormal')
+    : fuit ? fuit.position.nom + ' se dégonfle plus vite que la normale'
     : surveiller ? surveiller + ' à surveiller'
-    : 'Les quatre sont corrects';
+    : etats.length === 2 ? 'Les deux sont corrects' : 'Les quatre sont corrects';
 
   $('#btnTousPneus').textContent = etats.length === 2
     ? 'Saisir les deux pressions' : 'Saisir les quatre pressions';
@@ -530,6 +538,7 @@ function rendreHistoriquePneus(etats) {
   for (const e of etats) {
     const usure = e.usure;
     const part = usure ? Math.max(0, Math.min(1, (usure - USURE_LIMITE) / (USURE_NEUF - USURE_LIMITE))) : 0;
+    const perte = perteMensuelle(e.position.cle);
     const detail = e.dernier
       ? ['relevé le ' + dateCourte(e.dernier.date),
          e.ecart !== null ? (Math.abs(e.ecart) < 0.05 ? 'à la bonne pression'
@@ -546,6 +555,13 @@ function rendreHistoriquePneus(etats) {
           texte: (e.pression ? pressionTexte(e.pression, ' bar') : '— bar')
             + ' · ' + (usure ? nombreDecimal(usure, ' mm') : 'usure inconnue') }),
         el('span', { classe: 'pneu-ligne-detail', texte: detail }),
+        perte ? el('span', {
+          classe: 'pneu-ligne-detail ' + (statutPerte(perte.parMois) === 'retard' ? 'alerte'
+            : statutPerte(perte.parMois) === 'proche' ? 'attention' : ''),
+          texte: perte.parMois < 0.02
+            ? 'ne perd rien en ' + dureeLisible(perte.jours)
+            : 'perd ' + pressionTexte(perte.parMois, ' bar par mois'),
+        }) : null,
         usure ? el('span', { classe: 'barre-usure ' + (e.statut === 'inconnu' ? '' : e.statut) }, [
           el('span', { style: 'width:' + (part * 100).toFixed(0) + '%' }),
         ]) : null,
@@ -559,9 +575,24 @@ function rendreHistoriquePneus(etats) {
     + '. Un pneu neuf fait 8 mm de gomme, la limite légale est à 1,6 mm.' }));
 }
 
+/* « 1,8 → 2,4 bar » quand on a relevé avant de gonfler, sinon la seule valeur. */
+function pressionsDuReleve(p) {
+  if (!p) return null;
+  if (p.pressionAvant && p.pression) {
+    return pressionTexte(p.pressionAvant) + ' → ' + pressionTexte(p.pression, ' bar');
+  }
+  if (p.pression) return pressionTexte(p.pression, ' bar');
+  if (p.pressionAvant) return pressionTexte(p.pressionAvant, ' bar');
+  return null;
+}
+
 function ouvrirPneu(position) {
   const dernier = dernierPneu(position.cle);
   const cible = pressionCible(position.essieu);
+
+  const cAvant = champ('pAvant', 'Trouvée avant gonflage', {
+    type: 'text', inputmode: 'decimal', autocomplete: 'off', placeholder: '—',
+  }, 'Facultatif. C\'est ce qui permet de repérer une fuite.');
 
   const cPression = champ('pPression', 'Pression (bar)', {
     type: 'text', inputmode: 'decimal', autocomplete: 'off',
@@ -578,9 +609,11 @@ function ouvrirPneu(position) {
 
   const valider = () => {
     const pression = nombreSaisi(cPression.entree.value);
+    const avant = nombreSaisi(cAvant.entree.value);
     const usure = nombreSaisi(cUsure.entree.value);
     if (!pression && !usure) { toast('Saisis au moins une valeur'); return; }
     if (pression && (pression < 0.5 || pression > 5)) { toast('Pression peu vraisemblable'); return; }
+    if (avant && (avant < 0.2 || avant > 5)) { toast('Pression avant peu vraisemblable'); return; }
     if (usure && (usure < 0 || usure > 12)) { toast('Usure peu vraisemblable'); return; }
 
     etat.pneus.push({
@@ -589,6 +622,7 @@ function ouvrirPneu(position) {
       date: cDate.entree.value || versIso(aujourdhui()),
       position: position.cle,
       pression: pression || null,
+      pressionAvant: avant || null,
       usure: usure || null,
       km: kilometrageActuel().km,
     });
@@ -599,8 +633,15 @@ function ouvrirPneu(position) {
     toast(position.nom + ' enregistré');
   };
 
-  const contenu = [cPression.bloc, cUsure.bloc, cDate.bloc,
+  const contenu = [cAvant.bloc, cPression.bloc, cUsure.bloc, cDate.bloc,
     bouton('Enregistrer', { principal: true, action: valider })];
+
+  const perte = perteMensuelle(position.cle);
+  if (perte) {
+    contenu.push(el('p', { classe: 'aide', texte: 'Perte mesurée : '
+      + pressionTexte(perte.parMois, ' bar par mois')
+      + ' entre le ' + dateCourte(perte.depuis) + ' et le ' + dateCourte(perte.le) + '.' }));
+  }
 
   const passes = lesPneus().filter(p => p.position === position.cle)
     .sort((a, b) => a.date < b.date ? 1 : -1).slice(0, 6);
@@ -608,7 +649,7 @@ function ouvrirPneu(position) {
     contenu.push(el('h3', { classe: 'titre-section', texte: 'Relevés précédents' }));
     contenu.push(el('ul', { classe: 'detail-liste' }, passes.map(p => el('li', null, [
       el('span', { texte: dateCourte(p.date) }),
-      el('span', { texte: [p.pression ? pressionTexte(p.pression, ' bar') : null,
+      el('span', { texte: [pressionsDuReleve(p),
         p.usure ? nombreDecimal(p.usure, ' mm') : null].filter(Boolean).join(' · ') }),
     ]))));
   }
@@ -622,48 +663,78 @@ function nombreSaisi(valeur) {
 }
 
 /* Le gonflage se fait aux quatre pneus d'affilée : autant les saisir d'un coup. */
+/* Le gonflage se fait aux quatre pneus d'affilée : autant les saisir d'un coup.
+   Si l'on regonfle dans la foulée, ce qu'on saisit est ce qu'on a trouvé, et la
+   pression finale est la valeur recommandée — c'est l'écart entre les deux qui
+   révèle une fuite. */
 function ouvrirQuatrePressions() {
-  const champs = positionsVehicule().map(p => {
-    const dernier = dernierPneu(p.cle);
-    return {
-      position: p,
-      c: champ('q-' + p.cle, p.nom, {
-        type: 'text', inputmode: 'decimal', autocomplete: 'off',
-        placeholder: pressionTexte(pressionCible(p.essieu)),
-        value: dernier && dernier.pression ? pressionTexte(dernier.pression) : '',
-      }),
-    };
-  });
+  // Champs vides à dessein : pré-remplis, valider après n'avoir corrigé qu'une
+  // roue enregistrait les quatre, dont trois valeurs jamais mesurées.
+  const champs = positionsVehicule().map(p => ({
+    position: p,
+    c: champ('q-' + p.cle, p.nom, {
+      type: 'text', inputmode: 'decimal', autocomplete: 'off',
+      placeholder: pressionTexte(pressionCible(p.essieu)),
+    }),
+  }));
+
+  let regonfle = false;
+  const puce = el('button', { classe: 'puce', type: 'button', texte: 'Je les ai regonflés' });
+  const aide = el('p', { classe: 'aide' });
+
+  const majMode = () => {
+    puce.className = 'puce' + (regonfle ? ' actif' : '');
+    aide.textContent = regonfle
+      ? 'Les valeurs saisies sont celles trouvées avant gonflage. Les pneus seront notés à '
+        + pressionTexte(pressionCible('av')) + ' à l\'avant et '
+        + pressionTexte(pressionCible('ar'), ' bar') + ' à l\'arrière.'
+      : 'Les valeurs saisies sont la pression actuelle des pneus.';
+  };
+  puce.addEventListener('click', () => { regonfle = !regonfle; majMode(); vibrer(8); });
+  majMode();
 
   const valider = () => {
     const date = versIso(aujourdhui());
-    let compte = 0;
+    const aEnregistrer = [];
+
     for (const { position, c } of champs) {
-      const pression = nombreSaisi(c.entree.value);
-      if (!pression) continue;
-      if (pression < 0.5 || pression > 5) { toast(position.nom + ' : pression peu vraisemblable'); return; }
+      const saisie = nombreSaisi(c.entree.value);
+      if (!saisie) continue;
+      if (saisie < 0.2 || saisie > 5) { toast(position.nom + ' : pression peu vraisemblable'); return; }
       const dernier = dernierPneu(position.cle);
-      etat.pneus.push({
-        id: identifiant(), vehiculeId: idActif(), date, position: position.cle, pression,
+      aEnregistrer.push({
+        id: identifiant(), vehiculeId: idActif(), date, position: position.cle,
+        pression: regonfle ? pressionCible(position.essieu) : saisie,
+        pressionAvant: regonfle ? saisie : null,
         usure: dernier ? dernier.usure : null,   // l'usure ne change pas en gonflant
         km: kilometrageActuel().km,
       });
-      compte++;
     }
-    if (!compte) { toast('Aucune pression saisie'); return; }
+
+    if (!aEnregistrer.length) { toast('Aucune pression saisie'); return; }
+    for (const p of aEnregistrer) etat.pneus.push(p);
     enregistrer('pneus');
     fermerFeuille();
     rendreTout();
     vibrer(15);
-    toast(compte + (compte > 1 ? ' pressions enregistrées' : ' pression enregistrée'));
+    const n = aEnregistrer.length;
+    toast(n + (n > 1 ? ' pressions enregistrées' : ' pression enregistrée'));
   };
 
   const rangees = [el('div', { classe: 'champ-duo' }, [champs[0].c.bloc, champs[1].c.bloc])];
   if (champs.length > 2) {
     rangees.push(el('div', { classe: 'champ-duo' }, [champs[2].c.bloc, champs[3].c.bloc]));
   }
+
   ouvrirFeuille('Pressions du jour', 'À froid, avant de rouler.',
-    rangees.concat([bouton('Enregistrer', { principal: true, action: valider })]));
+    rangees.concat([
+      el('div', { classe: 'champ' }, [
+        el('label', { texte: 'Après la mesure' }),
+        el('div', { classe: 'puces' }, [puce]),
+        aide,
+      ]),
+      bouton('Enregistrer', { principal: true, action: valider }),
+    ]));
 }
 
 function ouvrirPressionsCible() {
@@ -726,6 +797,30 @@ function alertesPneus() {
       fraction: 1,
       texte: pire.position.nom + ' à ' + nombreDecimal(pire.usure, ' mm')
         + ' — limite légale ' + nombreDecimal(USURE_LIMITE, ' mm'),
+      action: versPneus,
+    });
+  }
+
+  const fuites = etats
+    .map(e => ({ position: e.position, perte: perteMensuelle(e.position.cle) }))
+    .filter(x => x.perte && statutPerte(x.perte.parMois) !== 'ok')
+    .sort((a, b) => b.perte.parMois - a.perte.parMois);
+
+  if (fuites.length) {
+    const pire = fuites[0];
+    const autres = etats
+      .map(e => perteMensuelle(e.position.cle))
+      .filter(p => p && p.parMois < pire.perte.parMois);
+    const moyenneAutres = autres.length
+      ? autres.reduce((n, p) => n + p.parMois, 0) / autres.length : null;
+    const nettement = moyenneAutres !== null && pire.perte.parMois > moyenneAutres * 2 + 0.05;
+
+    alertes.push({
+      regle: { cle: 'pneu_fuite', libelle: fuites.length > 1 ? 'Pneus qui se dégonflent' : 'Pneu qui se dégonfle' },
+      statut: statutPerte(pire.perte.parMois) === 'retard' ? 'retard' : 'proche',
+      fraction: 1,
+      texte: pire.position.nom + ' perd ' + pressionTexte(pire.perte.parMois, ' bar par mois')
+        + (nettement ? ', bien plus que les autres' : ''),
       action: versPneus,
     });
   }
