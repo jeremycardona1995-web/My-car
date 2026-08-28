@@ -57,8 +57,8 @@ function vibrer(ms) {
 
 function rendreAujourdhui() {
   const v = etat.vehicule;
-  const nom = v ? [v.modele || v.marque, v.immat].filter(Boolean).join(' · ') : 'Ta voiture';
-  $('#enteteVehicule').textContent = nom || 'Ta voiture';
+  const nom = v ? [v.modele || v.marque, v.immat].filter(Boolean).join(' · ') : 'Aucun véhicule';
+  $('#enteteVehiculeNom').textContent = nom || 'Sans nom';
 
   const actuel = kilometrageActuel();
   $('#compteurValeur').textContent = actuel.km === null ? '—' : nombreKm(actuel.km);
@@ -89,12 +89,18 @@ function rendreAujourdhui() {
   $('#repliInconnuTexte').textContent = 'Jamais renseignés (' + inconnu.length + ')';
 
   // L'accueil ne s'affiche que tant qu'il n'y a rien à montrer.
-  $('#accueil').hidden = etat.interventions.length > 0 || etat.releves.length > 0;
+  const sansVehicule = !etat.vehicule;
+  $('#accueil').hidden = !sansVehicule && (lesInterventions().length > 0 || lesReleves().length > 0);
+  $('#btnAccueilVehicule').hidden = !sansVehicule;
+  $('#btnTuto').hidden = sansVehicule;
+  $('#accueilTexte').textContent = sansVehicule
+    ? "Commence par créer ton véhicule : chacun a son carnet, ses échéances et ses pneus."
+    : "Commence par relever ton compteur avec le bouton en bas à droite, puis note ce que tu as déjà fait dans le carnet. L'application calcule le reste.";
 }
 
 /* Une panne reste visible en tête tant qu'elle n'est pas déclarée résolue. */
 function pannesOuvertes() {
-  return etat.interventions
+  return lesInterventions()
     .filter(i => i && i.categorie === 'panne' && !i.resolueLe)
     .sort((a, b) => a.date < b.date ? 1 : -1);
 }
@@ -171,7 +177,7 @@ function intervenants() {
   const groupes = new Map();
   let parMoi = 0, proSansNom = 0, indetermines = 0;
 
-  for (const i of etat.interventions) {
+  for (const i of lesInterventions()) {
     if (!i) continue;
     if (i.parQui === 'moi') { parMoi++; continue; }
     const brut = String(i.lieu || '').trim();
@@ -295,9 +301,9 @@ function ouvrirIntervenants() {
   ]);
 
   const carte = el('div', { classe: 'carte' });
-  const totalMoi = etat.interventions
+  const totalMoi = lesInterventions()
     .filter(i => i.parQui === 'moi').reduce((n, i) => n + (Number(i.coutTotal) || 0), 0);
-  const derniereMoi = etat.interventions
+  const derniereMoi = lesInterventions()
     .filter(i => i.parQui === 'moi').map(i => i.date).sort().pop();
 
   if (parMoi) carte.appendChild(ligne('Moi', parMoi, totalMoi, derniereMoi, 'moi'));
@@ -340,7 +346,7 @@ function rendreCarnet() {
   zone.textContent = '';
 
   const mots = motsRecherches();
-  const toutes = etat.interventions.slice().sort((a, b) => a.date < b.date ? 1 : a.date > b.date ? -1 : 0);
+  const toutes = lesInterventions().slice().sort((a, b) => a.date < b.date ? 1 : a.date > b.date ? -1 : 0);
   const visibles = toutes.filter(i =>
     (filtreActif === 'tout' || i.categorie === filtreActif)
     && faitPar(i, filtreQui) && correspond(i, mots));
@@ -419,18 +425,24 @@ function pressionTexte(n, unite) {
 }
 
 function rendrePneus() {
-  const etats = POSITIONS.map(etatPneu);
+  const etats = positionsVehicule().map(etatPneu);
   rendreSchemaPneus(etats);
   rendreHistoriquePneus(etats);
 
   const renseignes = etats.filter(e => e.statut !== 'inconnu').length;
   const anormaux = etats.filter(e => e.statut === 'retard').length;
   const surveiller = etats.filter(e => e.statut === 'proche').length;
-  $('#pneusResume').textContent = renseignes === 0
+  $('#pneusResume').textContent = !etat.vehicule
+    ? 'Ajoute d\'abord un véhicule'
+    : renseignes === 0
     ? 'Appuie sur un pneu pour le renseigner'
     : anormaux ? anormaux + (anormaux > 1 ? ' pneus anormaux' : ' pneu anormal')
     : surveiller ? surveiller + ' à surveiller'
     : 'Les quatre sont corrects';
+
+  $('#btnTousPneus').textContent = etats.length === 2
+    ? 'Saisir les deux pressions' : 'Saisir les quatre pressions';
+  $('#btnTousPneus').hidden = !etat.vehicule;
 
   $('#detailPressionsCible').textContent =
     'AV ' + pressionTexte(pressionCible('av')) + ' · AR ' + pressionTexte(pressionCible('ar'), ' bar');
@@ -439,33 +451,44 @@ function rendrePneus() {
 function rendreSchemaPneus(etats) {
   const zone = $('#schemaPneus');
   zone.textContent = '';
+  const deuxRoues = etats.length === 2;
   const L = 300, H = 300;
 
-  // Les valeurs se lisent à l'extérieur de la carrosserie : au centre, les
-  // colonnes gauche et droite se chevauchaient.
-  const places = {
-    avg: { x: 74, y: 84, gauche: true },
-    avd: { x: 208, y: 84, gauche: false },
-    arg: { x: 74, y: 188, gauche: true },
-    ard: { x: 208, y: 188, gauche: false },
-  };
+  const places = deuxRoues
+    ? { av: { x: 141, y: 60, gauche: false }, ar: { x: 141, y: 196, gauche: false } }
+    : {
+        avg: { x: 74, y: 84, gauche: true },
+        avd: { x: 208, y: 84, gauche: false },
+        arg: { x: 74, y: 188, gauche: true },
+        ard: { x: 208, y: 188, gauche: false },
+      };
 
   const enfants = [
     svgEl('text', { classe: 'pneu-etiquette', x: L / 2, y: 12, 'text-anchor': 'middle', texte: 'AVANT' }),
-    svgEl('rect', { classe: 'silhouette', x: 96, y: 22, width: 108, height: 262, rx: 32 }),
-    svgEl('rect', { classe: 'vitre', x: 112, y: 60, width: 76, height: 30, rx: 11 }),
-    svgEl('rect', { classe: 'vitre', x: 112, y: 216, width: 76, height: 26, rx: 10 }),
   ];
+
+  if (deuxRoues) {
+    // Vue du dessus également : le guidon suffit à dire où est l'avant.
+    enfants.push(svgEl('rect', { classe: 'silhouette', x: 128, y: 40, width: 44, height: 226, rx: 22 }));
+    enfants.push(svgEl('rect', { classe: 'vitre', x: 108, y: 74, width: 84, height: 9, rx: 4.5 }));
+    enfants.push(svgEl('rect', { classe: 'vitre', x: 136, y: 150, width: 28, height: 46, rx: 12 }));
+  } else {
+    enfants.push(svgEl('rect', { classe: 'silhouette', x: 96, y: 22, width: 108, height: 262, rx: 32 }));
+    enfants.push(svgEl('rect', { classe: 'vitre', x: 112, y: 60, width: 76, height: 30, rx: 11 }));
+    enfants.push(svgEl('rect', { classe: 'vitre', x: 112, y: 216, width: 76, height: 26, rx: 10 }));
+  }
 
   for (const e of etats) {
     const p = places[e.position.cle];
-    const ancreX = p.gauche ? 64 : 236;
+    if (!p) continue;
+    const ancreX = p.gauche ? 64 : (deuxRoues ? 190 : 236);
     const ancre = p.gauche ? 'end' : 'start';
     const groupe = svgEl('g', { classe: 'pneu-zone ' + e.statut, role: 'button',
       'aria-label': e.position.libelle });
 
     groupe.appendChild(svgEl('rect', {
-      x: p.gauche ? 0 : 200, y: p.y - 18, width: 100, height: 76, fill: 'transparent',
+      x: p.gauche ? 0 : (deuxRoues ? 120 : 200), y: p.y - 18,
+      width: deuxRoues ? 150 : 100, height: 76, fill: 'transparent',
     }));
     groupe.appendChild(svgEl('rect', { classe: 'pneu-forme', x: p.x, y: p.y, width: 18, height: 44, rx: 5 }));
     groupe.appendChild(svgEl('text', { classe: 'pneu-etiquette', x: ancreX, y: p.y + 4,
@@ -480,13 +503,13 @@ function rendreSchemaPneus(etats) {
   }
 
   zone.appendChild(svgEl('svg', { viewBox: '0 0 ' + L + ' ' + H, role: 'img',
-    'aria-label': 'Les quatre pneus vus du dessus' }, enfants));
+    'aria-label': deuxRoues ? 'Les deux roues' : 'Les quatre pneus vus du dessus' }, enfants));
 }
 
 function rendreHistoriquePneus(etats) {
   const zone = $('#historiquePneus');
   zone.textContent = '';
-  if (!etat.pneus.length) {
+  if (!lesPneus().length) {
     zone.appendChild(el('p', { classe: 'vide', texte: 'Aucun relevé pour l’instant.' }));
     return;
   }
@@ -519,7 +542,7 @@ function rendreHistoriquePneus(etats) {
   }
   zone.appendChild(carte);
 
-  const nb = etat.pneus.length;
+  const nb = lesPneus().length;
   zone.appendChild(el('p', { classe: 'note', texte: nb + (nb > 1 ? ' relevés enregistrés' : ' relevé enregistré')
     + '. Un pneu neuf fait 8 mm de gomme, la limite légale est à 1,6 mm.' }));
 }
@@ -550,6 +573,7 @@ function ouvrirPneu(position) {
 
     etat.pneus.push({
       id: identifiant(),
+      vehiculeId: idActif(),
       date: cDate.entree.value || versIso(aujourdhui()),
       position: position.cle,
       pression: pression || null,
@@ -566,7 +590,7 @@ function ouvrirPneu(position) {
   const contenu = [cPression.bloc, cUsure.bloc, cDate.bloc,
     bouton('Enregistrer', { principal: true, action: valider })];
 
-  const passes = etat.pneus.filter(p => p.position === position.cle)
+  const passes = lesPneus().filter(p => p.position === position.cle)
     .sort((a, b) => a.date < b.date ? 1 : -1).slice(0, 6);
   if (passes.length > 1) {
     contenu.push(el('h3', { classe: 'titre-section', texte: 'Relevés précédents' }));
@@ -587,7 +611,7 @@ function nombreSaisi(valeur) {
 
 /* Le gonflage se fait aux quatre pneus d'affilée : autant les saisir d'un coup. */
 function ouvrirQuatrePressions() {
-  const champs = POSITIONS.map(p => {
+  const champs = positionsVehicule().map(p => {
     const dernier = dernierPneu(p.cle);
     return {
       position: p,
@@ -608,7 +632,7 @@ function ouvrirQuatrePressions() {
       if (pression < 0.5 || pression > 5) { toast(position.nom + ' : pression peu vraisemblable'); return; }
       const dernier = dernierPneu(position.cle);
       etat.pneus.push({
-        id: identifiant(), date, position: position.cle, pression,
+        id: identifiant(), vehiculeId: idActif(), date, position: position.cle, pression,
         usure: dernier ? dernier.usure : null,   // l'usure ne change pas en gonflant
         km: kilometrageActuel().km,
       });
@@ -622,11 +646,12 @@ function ouvrirQuatrePressions() {
     toast(compte + (compte > 1 ? ' pressions enregistrées' : ' pression enregistrée'));
   };
 
-  ouvrirFeuille('Pressions du jour', 'À froid, avant de rouler.', [
-    el('div', { classe: 'champ-duo' }, [champs[0].c.bloc, champs[1].c.bloc]),
-    el('div', { classe: 'champ-duo' }, [champs[2].c.bloc, champs[3].c.bloc]),
-    bouton('Enregistrer', { principal: true, action: valider }),
-  ]);
+  const rangees = [el('div', { classe: 'champ-duo' }, [champs[0].c.bloc, champs[1].c.bloc])];
+  if (champs.length > 2) {
+    rangees.push(el('div', { classe: 'champ-duo' }, [champs[2].c.bloc, champs[3].c.bloc]));
+  }
+  ouvrirFeuille('Pressions du jour', 'À froid, avant de rouler.',
+    rangees.concat([bouton('Enregistrer', { principal: true, action: valider })]));
 }
 
 function ouvrirPressionsCible() {
@@ -656,7 +681,8 @@ function ouvrirPressionsCible() {
 /* Les pneus produisent leurs propres alertes, sans passer par une règle
    périodique : ce qui compte est la mesure, pas la date du dernier contrôle. */
 function alertesPneus() {
-  const etats = POSITIONS.map(etatPneu);
+  if (!etat.vehicule) return [];   // rien à surveiller tant qu'aucun véhicule n'existe
+  const etats = positionsVehicule().map(etatPneu);
   const alertes = [];
   const versPneus = () => allerA('Pneus');
 
@@ -687,7 +713,7 @@ function alertesPneus() {
     });
   }
 
-  const dates = etat.pneus.map(p => p.date).filter(Boolean).sort();
+  const dates = lesPneus().map(p => p.date).filter(Boolean).sort();
   const dernier = dates.length ? dates[dates.length - 1] : null;
   const jours = dernier ? (aujourdhui().getTime() - versDate(dernier).getTime()) / JOUR : null;
   if (!dernier) {
@@ -711,6 +737,9 @@ function alertesPneus() {
 
 function rendreVoiture() {
   const v = etat.vehicule;
+  $('#detailVehicules').textContent = etat.vehicules.length
+    ? etat.vehicules.length + (etat.vehicules.length > 1 ? ' véhicules' : ' véhicule')
+    : 'aucun';
   $('#ficheTitre').textContent = v && (v.marque || v.modele)
     ? [v.marque, v.modele].filter(Boolean).join(' ')
     : 'Renseigner le véhicule';
@@ -778,7 +807,7 @@ function rendreGrapheCout() {
   const zone = $('#grapheCout');
   zone.textContent = '';
   const parAnnee = new Map();
-  for (const i of etat.interventions) {
+  for (const i of lesInterventions()) {
     const annee = (i.date || '').slice(0, 4);
     if (!/^\d{4}$/.test(annee)) continue;
     const acc = parAnnee.get(annee) || { total: 0, charge: 0 };
@@ -917,7 +946,7 @@ function ouvrirCompteur(options) {
     if (!km || km <= 0) { toast('Saisis un nombre de kilomètres'); return; }
     const dernier = dernierReleve();
     if (dernier && km < dernier.km) { toast('Plus bas que le dernier relevé (' + nombreKm(dernier.km) + ' km)'); return; }
-    etat.releves.push({ id: identifiant(), date: versIso(aujourdhui()), km, origine: 'saisie' });
+    etat.releves.push({ id: identifiant(), vehiculeId: idActif(), date: versIso(aujourdhui()), km, origine: 'saisie' });
     delete etat.reglages.compteurReporteJusqua;
     enregistrer('releves');
     enregistrer('reglages');
@@ -1009,7 +1038,7 @@ function ouvrirIntervention(idExistant, reglePrecochee) {
   if (existant && existant.notes) cNotes.entree.value = existant.notes;
 
   const puces = el('div', { classe: 'puces' });
-  for (const r of etat.regles) {
+  for (const r of lesRegles()) {
     const p = el('button', {
       classe: 'puce' + (postesChoisis.has(r.cle) ? ' actif' : ''),
       type: 'button', texte: r.libelle,
@@ -1036,6 +1065,7 @@ function ouvrirIntervention(idExistant, reglePrecochee) {
     const chargeSaisie = cCharge.entree.value.trim();
     const objet = {
       id: existant ? existant.id : identifiant(),
+      vehiculeId: existant ? existant.vehiculeId : idActif(),
       date,
       titre,
       categorie: cCategorie.entree.value,
@@ -1055,7 +1085,7 @@ function ouvrirIntervention(idExistant, reglePrecochee) {
       etat.interventions.push(objet);
     }
     // Un poste refait annule le report demandé auparavant.
-    for (const r of etat.regles) if (postesChoisis.has(r.cle) && r.repousseJusqua) delete r.repousseJusqua;
+    for (const r of lesRegles()) if (postesChoisis.has(r.cle) && r.repousseJusqua) delete r.repousseJusqua;
     enregistrer('interventions');
     enregistrer('regles');
     fermerFeuille();
@@ -1093,7 +1123,7 @@ function ouvrirDetailIntervention(id) {
   if (!i) return;
   const cat = categorie(i.categorie);
   const postes = (i.postes || [])
-    .map(c => (etat.regles.find(r => r.cle === c) || {}).libelle)
+    .map(c => (lesRegles().find(r => r.cle === c) || {}).libelle)
     .filter(Boolean);
 
   const lignes = el('ul', { classe: 'detail-liste' }, [
@@ -1156,7 +1186,9 @@ function confirmerSuppression(i) {
 /* ── Fiche véhicule ── */
 
 function ouvrirFiche() {
-  const v = etat.vehicule || {};
+  const v = etat.vehicule;
+  if (!v) { ouvrirNouveauVehicule(); return; }
+
   const champs = [
     ['marque', 'Marque', 'text'],
     ['modele', 'Modèle', 'text'],
@@ -1169,23 +1201,179 @@ function ouvrirFiche() {
     return { cle, entree: c.entree, bloc: c.bloc };
   });
 
-  ouvrirFeuille('Ta voiture', 'Ces informations restent sur ce téléphone.',
+  let roues = Number(v.roues) === 2 ? 2 : 4;
+  const puceQuatre = el('button', { classe: 'puce', type: 'button', texte: '4 roues' });
+  const puceDeux = el('button', { classe: 'puce', type: 'button', texte: '2 roues' });
+  const majRoues = () => {
+    puceQuatre.className = 'puce' + (roues === 4 ? ' actif' : '');
+    puceDeux.className = 'puce' + (roues === 2 ? ' actif' : '');
+  };
+  puceQuatre.addEventListener('click', () => { roues = 4; majRoues(); vibrer(8); });
+  puceDeux.addEventListener('click', () => { roues = 2; majRoues(); vibrer(8); });
+  majRoues();
+
+  const cAv = champ('v-pav', 'Pression avant', { type: 'text', inputmode: 'decimal',
+    placeholder: '2,4', value: v.pressionAv ? pressionTexte(v.pressionAv) : '' });
+  const cAr = champ('v-par', 'Pression arrière', { type: 'text', inputmode: 'decimal',
+    placeholder: '2,4', value: v.pressionAr ? pressionTexte(v.pressionAr) : '' });
+
+  const actions = [
+    bouton('Enregistrer', {
+      principal: true,
+      action: () => {
+        for (const c of champs) v[c.cle] = c.entree.value.trim();
+        v.roues = roues;
+        v.pressionAv = nombreSaisi(cAv.entree.value);
+        v.pressionAr = nombreSaisi(cAr.entree.value);
+        enregistrer('vehicules');
+        fermerFeuille();
+        rendreTout();
+        toast('Fiche enregistrée');
+      },
+    }),
+  ];
+  if (etat.vehicules.length > 1) {
+    actions.push(bouton('Supprimer ce véhicule', { danger: true, action: () => confirmerSuppressionVehicule(v) }));
+  }
+
+  ouvrirFeuille(nomVehicule(v), 'Ces informations restent sur ce téléphone.',
     champs.map(c => c.bloc).concat([
-      bouton('Enregistrer', {
-        principal: true,
-        action: () => {
-          const nouveau = Object.assign({ id: (etat.vehicule && etat.vehicule.id) || identifiant() }, etat.vehicule);
-          for (const c of champs) nouveau[c.cle] = c.entree.value.trim();
-          etat.vehicule = nouveau;
-          enregistrer('vehicule');
-          fermerFeuille();
-          rendreTout();
-          toast('Fiche enregistrée');
-        },
-      }),
-    ]));
+      el('div', { classe: 'champ' }, [
+        el('label', { texte: 'Nombre de roues' }),
+        el('div', { classe: 'puces' }, [puceQuatre, puceDeux]),
+      ]),
+      el('div', { classe: 'champ-duo' }, [cAv.bloc, cAr.bloc]),
+      el('p', { classe: 'aide', texte: "Pressions recommandées, sur l'étiquette de la portière ou du bras oscillant." }),
+    ]).concat(actions));
 }
 
+/* ─────────────── Plusieurs véhicules ─────────────── */
+
+function compterPour(id) {
+  return etat.interventions.filter(i => i && i.vehiculeId === id).length;
+}
+
+function ouvrirVehicules() {
+  const carte = el('div', { classe: 'carte' });
+  for (const v of etat.vehicules) {
+    const actif = etat.vehicule && v.id === etat.vehicule.id;
+    const nb = compterPour(v.id);
+    carte.appendChild(el('button', {
+      classe: 'ligne ligne-bouton', type: 'button',
+      sur: {
+        click: () => {
+          activerVehicule(v.id);
+          fusionnerRegles();
+          fermerFeuille();
+          rendreFiltres();
+          rendreTout();
+          allerA('Aujourdhui');
+          toast(nomVehicule(v));
+        },
+      },
+    }, [
+      el('span', { classe: 'evenement-texte' }, [
+        el('span', { classe: 'evenement-titre', texte: nomVehicule(v) }),
+        el('span', { classe: 'evenement-detail',
+          texte: [v.immat || null, nb + (nb > 1 ? ' interventions' : ' intervention'),
+            Number(v.roues) === 2 ? '2 roues' : null].filter(Boolean).join(' · ') }),
+      ]),
+      el('span', { classe: 'ligne-detail', texte: actif ? '✓' : '' }),
+    ]));
+  }
+
+  ouvrirFeuille('Mes véhicules',
+    etat.vehicules.length > 1 ? 'Choisis celui que tu veux suivre.' : null,
+    [
+      etat.vehicules.length ? carte : null,
+      bouton('Ajouter un véhicule', { principal: true, action: ouvrirNouveauVehicule }),
+      etat.vehicule ? bouton('Modifier « ' + nomVehicule(etat.vehicule) + ' »',
+        { action: () => { fermerFeuille(); setTimeout(ouvrirFiche, 60); } }) : null,
+    ]);
+}
+
+function ouvrirNouveauVehicule() {
+  const cMarque = champ('n-marque', 'Marque', { type: 'text', autocomplete: 'off', placeholder: 'Citroën' });
+  const cModele = champ('n-modele', 'Modèle', { type: 'text', autocomplete: 'off', placeholder: 'DS4' });
+  const cImmat = champ('n-immat', 'Immatriculation', { type: 'text', autocomplete: 'off' });
+
+  let roues = 4;
+  const puceQuatre = el('button', { classe: 'puce actif', type: 'button', texte: '4 roues' });
+  const puceDeux = el('button', { classe: 'puce', type: 'button', texte: '2 roues' });
+  const majRoues = () => {
+    puceQuatre.className = 'puce' + (roues === 4 ? ' actif' : '');
+    puceDeux.className = 'puce' + (roues === 2 ? ' actif' : '');
+  };
+  puceQuatre.addEventListener('click', () => { roues = 4; majRoues(); });
+  puceDeux.addEventListener('click', () => { roues = 2; majRoues(); });
+
+  // Reprendre les postes d'un véhicule existant fait gagner du temps entre deux
+  // voitures semblables, et n'a aucun sens entre une auto et une moto.
+  let reprendre = null;
+  const pucesReprise = el('div', { classe: 'puces' });
+  for (const v of etat.vehicules) {
+    const p = el('button', { classe: 'puce', type: 'button', texte: nomVehicule(v) });
+    p.addEventListener('click', () => {
+      const etaitChoisi = reprendre === v.id;
+      for (const autre of pucesReprise.children) autre.className = 'puce';
+      reprendre = etaitChoisi ? null : v.id;
+      if (reprendre) p.className = 'puce actif';
+    });
+    pucesReprise.appendChild(p);
+  }
+
+  const contenu = [cMarque.bloc, cModele.bloc, cImmat.bloc,
+    el('div', { classe: 'champ' }, [
+      el('label', { texte: 'Nombre de roues' }),
+      el('div', { classe: 'puces' }, [puceQuatre, puceDeux]),
+    ])];
+
+  if (etat.vehicules.length) {
+    contenu.push(el('div', { classe: 'champ' }, [
+      el('label', { texte: 'Reprendre les postes suivis de' }),
+      pucesReprise,
+      el('p', { classe: 'aide', texte: "Sinon, les intervalles par défaut s'appliquent." }),
+    ]));
+  }
+
+  contenu.push(bouton('Créer', {
+    principal: true,
+    action: () => {
+      const marque = cMarque.entree.value.trim();
+      const modele = cModele.entree.value.trim();
+      if (!marque && !modele) { toast('Donne au moins une marque ou un modèle'); return; }
+      creerVehicule({ marque, modele, immat: cImmat.entree.value.trim(), roues }, reprendre);
+      fermerFeuille();
+      rendreFiltres();
+      rendreTout();
+      allerA('Aujourdhui');
+      toast('Véhicule créé');
+    },
+  }));
+
+  ouvrirFeuille('Nouveau véhicule', 'Chaque véhicule a son carnet, ses échéances et ses pneus.', contenu);
+}
+
+function confirmerSuppressionVehicule(v) {
+  const nb = compterPour(v.id);
+  ouvrirFeuille('Supprimer ' + nomVehicule(v) + ' ?',
+    nb + (nb > 1 ? ' interventions seront perdues' : ' intervention sera perdue')
+      + ", avec les relevés et les pneus. Exporte d'abord si tu hésites.", [
+      bouton('Supprimer définitivement', {
+        danger: true,
+        action: () => {
+          supprimerVehicule(v.id);
+          fusionnerRegles();
+          fermerFeuille();
+          rendreFiltres();
+          rendreTout();
+          allerA('Aujourdhui');
+          toast('Véhicule supprimé');
+        },
+      }),
+      bouton('Annuler', { action: fermerFeuille }),
+    ]);
+}
 
 /* ─────────────── Dicter à une IA ─────────────── */
 
@@ -1196,7 +1384,7 @@ function ouvrirFiche() {
 function construirePrompt() {
   const v = etat.vehicule || {};
   const actuel = kilometrageActuel();
-  const postes = etat.regles.map(r => r.cle).join(', ');
+  const postes = lesRegles().map(r => r.cle).join(', ');
   const cats = CATEGORIES.map(c => '"' + c.cle + '"').join(', ');
   const identite = [v.marque, v.modele,
     v.dateMiseCirculation ? 'de ' + v.dateMiseCirculation.slice(0, 4) : null,
@@ -1419,6 +1607,9 @@ function brancherInterface() {
   });
 
   $('#blocCompteur').addEventListener('click', () => ouvrirCompteur());
+  $('#enteteVehicule').addEventListener('click', ouvrirVehicules);
+  $('#btnVehicules').addEventListener('click', ouvrirVehicules);
+  $('#btnAccueilVehicule').addEventListener('click', ouvrirNouveauVehicule);
   $('#btnMiseAJour').addEventListener('click', forcerMiseAJour);
   $('#btnIntervenants').addEventListener('click', ouvrirIntervenants);
   $('#ouvrirFiche').addEventListener('click', ouvrirFiche);
@@ -1449,7 +1640,7 @@ function demarrer() {
   rendreTout();
   allerA('Aujourdhui');
 
-  if (!etat.reglages.tutoVu && etat.interventions.length === 0) {
+  if (!etat.reglages.tutoVu && lesInterventions().length === 0) {
     setTimeout(ouvrirTutoriel, 500);
   } else if (doitReclamerCompteur()) {
     setTimeout(reclamerCompteur, 700);

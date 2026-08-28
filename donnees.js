@@ -4,7 +4,7 @@
 
 'use strict';
 
-const VERSION_APPLI = '1.5.0';
+const VERSION_APPLI = '2.0.0';
 const VERSION_FORMAT = 1;
 const CLES = {
   vehicule: 'vehiculeV1',
@@ -13,6 +13,7 @@ const CLES = {
   regles: 'reglesV1',
   reglages: 'reglagesV1',
   pneus: 'pneusV1',
+  vehicules: 'vehiculesV1',
 };
 
 const CATEGORIES = [
@@ -67,7 +68,8 @@ function ecrire(cle, valeur) {
 }
 
 let etat = {
-  vehicule: null,
+  vehicules: [],
+  vehicule: null,     // pointeur vers l'élément actif de vehicules, jamais une copie
   releves: [],
   interventions: [],
   regles: [],
@@ -76,15 +78,119 @@ let etat = {
 };
 
 function chargerEtat() {
+  etat.vehicules = lire(CLES.vehicules, []);
   etat.vehicule = lire(CLES.vehicule, null);
   etat.releves = lire(CLES.releves, []);
   etat.interventions = lire(CLES.interventions, []);
   etat.regles = lire(CLES.regles, []);
   etat.reglages = lire(CLES.reglages, {});
   etat.pneus = lire(CLES.pneus, []);
+  migrerVehicules();
+  activerVehicule(etat.reglages.vehiculeActif);
   fusionnerRegles();
   migrerPostesAuBesoin();
   migrerParQui();
+}
+
+/* ─────────────── Véhicules ─────────────── */
+
+/* Migration volontairement non destructive : « vehiculeV1 » reste en place.
+   Si quelque chose tourne mal, l'historique d'origine est toujours là. */
+function migrerVehicules() {
+  if (etat.reglages.migrationVehicules) return;
+
+  if (!etat.vehicules.length) {
+    const ancien = etat.vehicule;
+    const quelqueChose = ancien || etat.interventions.length || etat.releves.length;
+    if (quelqueChose) {
+      const v = Object.assign({}, ancien || {});
+      v.id = v.id || identifiant();
+      v.roues = 4;
+      v.pressionAv = Number(etat.reglages.pressionAv) || 0;
+      v.pressionAr = Number(etat.reglages.pressionAr) || 0;
+      if (!v.marque && !v.modele) v.modele = 'Ma voiture';
+      etat.vehicules = [v];
+      etat.reglages.vehiculeActif = v.id;
+    }
+  }
+
+  const id = etat.reglages.vehiculeActif;
+  if (id) {
+    for (const liste of [etat.interventions, etat.releves, etat.regles, etat.pneus]) {
+      for (const x of liste) if (x && !x.vehiculeId) x.vehiculeId = id;
+    }
+  }
+
+  etat.reglages.migrationVehicules = true;
+  for (const cle of ['vehicules', 'interventions', 'releves', 'regles', 'pneus', 'reglages']) {
+    enregistrer(cle);
+  }
+}
+
+function activerVehicule(id) {
+  const trouve = etat.vehicules.find(v => v && v.id === id) || etat.vehicules[0] || null;
+  etat.vehicule = trouve;
+  if (trouve && etat.reglages.vehiculeActif !== trouve.id) {
+    etat.reglages.vehiculeActif = trouve.id;
+    enregistrer('reglages');
+  }
+  return trouve;
+}
+
+function idActif() {
+  return etat.vehicule ? etat.vehicule.id : null;
+}
+
+/* Vues filtrées : le stockage reste global, la lecture est toujours cadrée
+   sur le véhicule affiché. */
+function duVehicule(liste) {
+  const id = idActif();
+  if (!id) return [];
+  return liste.filter(x => x && x.vehiculeId === id);
+}
+
+const lesInterventions = () => duVehicule(etat.interventions);
+const lesReleves = () => duVehicule(etat.releves);
+const lesRegles = () => duVehicule(etat.regles);
+const lesPneus = () => duVehicule(etat.pneus);
+
+function creerVehicule(champs, reprendreDe) {
+  const v = Object.assign({ id: identifiant(), roues: 4, pressionAv: 0, pressionAr: 0 }, champs || {});
+  etat.vehicules.push(v);
+  enregistrer('vehicules');
+  activerVehicule(v.id);
+
+  // Les postes suivis appartiennent au véhicule : une moto n'a pas les
+  // intervalles d'un diesel. On recopie seulement sur demande explicite.
+  const modeles = reprendreDe
+    ? etat.regles.filter(r => r.vehiculeId === reprendreDe)
+    : REGLES_PAR_DEFAUT;
+  for (const m of modeles) {
+    etat.regles.push({
+      id: identifiant(), vehiculeId: v.id, cle: m.cle, libelle: m.libelle,
+      intervalleKm: m.intervalleKm, intervalleMois: m.intervalleMois,
+      auBesoin: !!m.auBesoin, actif: m.actif !== false,
+    });
+  }
+  enregistrer('regles');
+  return v;
+}
+
+function supprimerVehicule(id) {
+  etat.vehicules = etat.vehicules.filter(v => v && v.id !== id);
+  etat.interventions = etat.interventions.filter(x => x.vehiculeId !== id);
+  etat.releves = etat.releves.filter(x => x.vehiculeId !== id);
+  etat.regles = etat.regles.filter(x => x.vehiculeId !== id);
+  etat.pneus = etat.pneus.filter(x => x.vehiculeId !== id);
+  for (const cle of ['vehicules', 'interventions', 'releves', 'regles', 'pneus']) enregistrer(cle);
+  activerVehicule(etat.vehicules.length ? etat.vehicules[0].id : null);
+  if (!etat.vehicules.length) { etat.vehicule = null; etat.reglages.vehiculeActif = null; }
+  enregistrer('reglages');
+}
+
+function nomVehicule(v) {
+  if (!v) return 'Aucun véhicule';
+  return [v.marque, v.modele].filter(Boolean).join(' ') || v.immat || 'Sans nom';
 }
 
 /* « Fait par » servait à la fois à dire « moi » et à nommer un garage : un même
@@ -125,6 +231,7 @@ function auteur(i) {
 function migrerPostesAuBesoin() {
   if (etat.reglages.migrationAuBesoin) return;
   for (const r of etat.regles) {
+    if (!r) continue;
     if ((r.cle === 'freins' || r.cle === 'pneus') && r.intervalleKm === 0 && r.intervalleMois === 6) {
       r.intervalleMois = 0;
       r.auBesoin = true;
@@ -140,12 +247,15 @@ function migrerPostesAuBesoin() {
 /* Ajoute les postes manquants sans écraser ceux que l'utilisateur a réglés.
    Idempotent : rejouable à chaque démarrage sans effet de bord. */
 function fusionnerRegles() {
-  const connues = new Set(etat.regles.map(r => r.cle));
+  const id = idActif();
+  if (!id) return;
+  const connues = new Set(lesRegles().map(r => r.cle));
   let change = false;
   for (const modele of REGLES_PAR_DEFAUT) {
     if (connues.has(modele.cle)) continue;
     etat.regles.push({
       id: identifiant(),
+      vehiculeId: id,
       cle: modele.cle,
       libelle: modele.libelle,
       intervalleKm: modele.intervalleKm,
@@ -159,7 +269,8 @@ function fusionnerRegles() {
 }
 
 function enregistrer(quoi) {
-  if (quoi === 'vehicule') ecrire(CLES.vehicule, etat.vehicule);
+  // « vehicule » désigne l'élément actif du tableau : c'est le tableau qu'on écrit.
+  if (quoi === 'vehicule' || quoi === 'vehicules') ecrire(CLES.vehicules, etat.vehicules);
   if (quoi === 'releves') ecrire(CLES.releves, etat.releves);
   if (quoi === 'interventions') ecrire(CLES.interventions, etat.interventions);
   if (quoi === 'regles') ecrire(CLES.regles, etat.regles);
@@ -257,7 +368,7 @@ function motsRecherches() {
    postes remis à zéro, date sous ses deux formes, kilométrage. */
 function indexIntervention(i) {
   const postes = (i.postes || [])
-    .map(c => (etat.regles.find(r => r.cle === c) || {}).libelle)
+    .map(c => (lesRegles().find(r => r.cle === c) || {}).libelle)
     .filter(Boolean);
   return sansAccents([
     i.titre, i.notes, i.lieu, categorie(i.categorie).libelle,
@@ -320,6 +431,7 @@ function construireExport() {
     application: 'carnet-entretien',
     versionFormat: VERSION_FORMAT,
     exporteLe: new Date().toISOString(),
+    vehicules: etat.vehicules,
     vehicule: etat.vehicule,
     releves: etat.releves,
     interventions: etat.interventions,
@@ -377,7 +489,7 @@ function echapperCsv(valeur) {
 
 async function exporterCsv() {
   const entetes = ['Date', 'Titre', 'Catégorie', 'Kilomètre', 'Facture', 'Payé par moi', 'Fait par', 'Postes', 'Notes'];
-  const lignes = etat.interventions
+  const lignes = lesInterventions()
     .slice().sort((a, b) => a.date < b.date ? -1 : 1)
     .map(i => [
       i.date, i.titre, categorie(i.categorie).libelle, i.km || '',
@@ -480,8 +592,8 @@ function signature(i) {
 }
 
 function ajouterAuCarnet(donnees) {
-  const connus = new Set(etat.interventions.map(i => i.id));
-  const signatures = new Set(etat.interventions.map(signature));
+  const connus = new Set(lesInterventions().map(i => i.id));
+  const signatures = new Set(lesInterventions().map(signature));
   let ajoutees = 0, ignorees = 0;
   for (const i of (Array.isArray(donnees.interventions) ? donnees.interventions : [])) {
     if (!i || !versDate(i.date)) continue;
@@ -491,6 +603,7 @@ function ajouterAuCarnet(donnees) {
     signatures.add(signature(i));
     etat.interventions.push({
       id: i.id || identifiant(),
+      vehiculeId: idActif(),
       date: i.date,
       titre: String(i.titre || 'Sans titre'),
       categorie: CATEGORIES.some(c => c.cle === i.categorie) ? i.categorie : 'depannage',
@@ -503,14 +616,15 @@ function ajouterAuCarnet(donnees) {
         : (MOTS_MOI.includes(sansAccents(String(i.lieu || '').trim())) ? 'moi'
           : (String(i.lieu || '').trim() ? 'pro' : '')),
       notes: String(i.notes || ''),
-      postes: Array.isArray(i.postes) ? i.postes.filter(p => etat.regles.some(r => r.cle === p)) : [],
+      postes: Array.isArray(i.postes) ? i.postes.filter(p => lesRegles().some(r => r.cle === p)) : [],
       resolueLe: i.resolueLe || null,
     });
     ajoutees++;
   }
   for (const r of (Array.isArray(donnees.releves) ? donnees.releves : [])) {
     if (r && r.km > 0 && versDate(r.date)) {
-      etat.releves.push({ id: r.id || identifiant(), date: r.date, km: Number(r.km), origine: 'import' });
+      etat.releves.push({ id: r.id || identifiant(), vehiculeId: idActif(),
+        date: r.date, km: Number(r.km), origine: 'import' });
     }
   }
   enregistrer('interventions');
@@ -537,6 +651,7 @@ function importerFichier(fichier) {
 /* Accepte les formats antérieurs : chaque clé absente retombe sur une valeur
    par défaut plutôt que de faire échouer l'import entier. */
 function appliquerImport(donnees) {
+  etat.vehicules = Array.isArray(donnees.vehicules) ? donnees.vehicules : [];
   etat.vehicule = donnees.vehicule || null;
   etat.releves = Array.isArray(donnees.releves) ? donnees.releves : [];
   etat.interventions = Array.isArray(donnees.interventions) ? donnees.interventions : [];
@@ -551,6 +666,10 @@ function appliquerImport(donnees) {
   }
   for (const r of etat.releves) if (!r.id) r.id = identifiant();
 
+  // Un fichier d'avant les véhicules multiples repasse par la migration.
+  delete etat.reglages.migrationVehicules;
+  migrerVehicules();
+  activerVehicule(etat.reglages.vehiculeActif);
   fusionnerRegles();
   for (const cle of Object.keys(CLES)) enregistrer(cle);
   rendreTout();
@@ -563,7 +682,8 @@ function confirmerEffacement() {
       danger: true,
       action: () => {
         try { for (const cle of Object.values(CLES)) localStorage.removeItem(cle); } catch (e) { /* stockage indisponible */ }
-        etat = { vehicule: null, releves: [], interventions: [], regles: [], reglages: {}, pneus: [] };
+        etat = { vehicules: [], vehicule: null, releves: [], interventions: [],
+          regles: [], reglages: {}, pneus: [] };
         fusionnerRegles();
         fermerFeuille();
         rendreTout();

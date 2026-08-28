@@ -19,7 +19,10 @@
   <!-- ───────────────────────── Aujourd'hui ───────────────────────── -->
   <main id="vueAujourdhui" class="vue">
     <header class="entete">
-      <p class="entete-vehicule" id="enteteVehicule">Ta voiture</p>
+      <button class="entete-vehicule" id="enteteVehicule" type="button">
+        <span id="enteteVehiculeNom">Ta voiture</span>
+        <svg class="chevron-bas" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+      </button>
       <button class="bloc-compteur" id="blocCompteur" type="button">
         <span class="compteur"><span id="compteurValeur">—</span><span class="compteur-unite">km</span></span>
         <span class="entete-detail" id="compteurDetail">Aucun relevé enregistré</span>
@@ -59,8 +62,9 @@
 
     <div class="carte accueil" id="accueil" hidden>
       <p class="accueil-titre">Bienvenue</p>
-      <p class="accueil-texte">Commence par relever ton compteur avec le bouton en bas à droite,
+      <p class="accueil-texte" id="accueilTexte">Commence par relever ton compteur avec le bouton en bas à droite,
         puis note ce que tu as déjà fait dans le carnet. L'application calcule le reste.</p>
+      <button class="feuille-bouton principal" id="btnAccueilVehicule" type="button" hidden>Ajouter un véhicule</button>
       <button class="feuille-bouton principal" id="btnTuto" type="button">Comment ça marche</button>
     </div>
   </main>
@@ -124,6 +128,12 @@
       <h1 class="titre-vue">Voiture</h1>
       <p class="entete-detail">Fiche, dépenses et sauvegarde</p>
     </header>
+
+    <div class="carte">
+      <button class="ligne ligne-bouton" id="btnVehicules">
+        <span>Mes véhicules</span><span class="ligne-detail" id="detailVehicules">—</span>
+      </button>
+    </div>
 
     <button class="carte carte-action" id="ouvrirFiche">
       <span class="carte-action-texte">

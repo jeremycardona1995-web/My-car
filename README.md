@@ -4,6 +4,11 @@ Application web pour téléphone qui suit l'entretien d'une voiture : ce qui a �
 fait, ce que ça a coûté, et surtout ce qui arrive à échéance. Elle fonctionne
 sans réseau, sans compte et sans serveur.
 
+L'application suit **plusieurs véhicules**. Chacun a son carnet, ses relevés,
+ses postes suivis et ses pneus ; le nom affiché en haut de l'écran du jour sert
+de sélecteur. Un véhicule déclare son nombre de roues — deux ou quatre —, ce qui
+change le schéma des pneus, et ses pressions recommandées.
+
 ## Ce qu'elle fait
 
 - **Aujourd'hui** — le kilométrage du jour (estimé à partir de vos relevés) et
@@ -78,8 +83,15 @@ clés absentes d'un fichier plus ancien retombent sur leurs valeurs par défaut.
 
 ## Format des données
 
-Six clés versionnées dans `localStorage` : `vehiculeV1`, `relevesV1`,
-`interventionsV1`, `reglesV1`, `reglagesV1`, `pneusV1`. Chaque enregistrement porte un
+Sept clés versionnées dans `localStorage` : `vehiculesV1`, `vehiculeV1`
+(conservée telle quelle depuis la version mono-véhicule), `relevesV1`,
+`interventionsV1`, `reglesV1`, `reglagesV1`, `pneusV1`. Interventions, relevés,
+règles et relevés de pneus portent l'identifiant de leur véhicule ; la lecture
+est toujours cadrée sur le véhicule actif.
+
+La migration vers le parc est volontairement **non destructive** : elle écrit
+`vehiculesV1` à côté de `vehiculeV1` sans toucher à cette dernière, afin qu'un
+retour en arrière reste possible. Chaque enregistrement porte un
 identifiant stable (`crypto.randomUUID()`) ; aucun libellé affiché ne sert de
 clé, ce qui permet de renommer un poste sans rien casser. Les postes suivis sont
 identifiés par une clé technique (`vidange`, `filtre_air`, …) distincte de leur
@@ -102,7 +114,9 @@ Aucune dépendance, aucune compilation, aucun `npm`. Quatre fichiers :
 |---|---|
 | `index.html` | structure des trois vues |
 | `styles.css` | mise en forme |
-| `app.js` | données, calcul des échéances, rendu, import/export |
+| `donnees.js` | stockage, migrations, véhicules, formats, sauvegarde |
+| `echeances.js` | kilométrage, échéances, pneus, agenda |
+| `app.js` | interface : écrans, feuilles, gestes, navigation |
 | `sw.js` | mise en cache hors ligne, réseau d'abord |
 
 Pour travailler dessus, servez le dossier en local :

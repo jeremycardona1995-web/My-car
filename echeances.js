@@ -10,10 +10,10 @@
    deux fois la même information. */
 function tousLesReleves() {
   const liste = [];
-  for (const r of etat.releves) {
+  for (const r of lesReleves()) {
     if (r && r.km > 0 && versDate(r.date)) liste.push({ date: r.date, km: Number(r.km) });
   }
-  for (const i of etat.interventions) {
+  for (const i of lesInterventions()) {
     if (i && i.km > 0 && versDate(i.date)) liste.push({ date: i.date, km: Number(i.km) });
   }
   liste.sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
@@ -64,7 +64,7 @@ function kilometrageActuel() {
 
 function dernierFait(cleRegle) {
   let trouve = null;
-  for (const i of etat.interventions) {
+  for (const i of lesInterventions()) {
     if (!i || !Array.isArray(i.postes) || !i.postes.includes(cleRegle)) continue;
     if (!trouve || i.date >= trouve.date) trouve = i;
   }
@@ -79,7 +79,7 @@ function calculerEcheances() {
   const jour0 = aujourdhui();
   const resultat = [];
 
-  for (const regle of etat.regles) {
+  for (const regle of lesRegles()) {
     if (!regle || regle.actif === false || regle.auBesoin) continue;
     const fait = dernierFait(regle.cle);
     const e = {
@@ -153,25 +153,36 @@ function texteEcheance(e) {
 
 /* ─────────────── Pneus ─────────────── */
 
-const POSITIONS = [
+const POSITIONS_QUATRE = [
   { cle: 'avg', nom: 'AVG', libelle: 'Avant gauche', essieu: 'av' },
   { cle: 'avd', nom: 'AVD', libelle: 'Avant droit',  essieu: 'av' },
   { cle: 'arg', nom: 'ARG', libelle: 'Arrière gauche', essieu: 'ar' },
   { cle: 'ard', nom: 'ARD', libelle: 'Arrière droit',  essieu: 'ar' },
 ];
 
+const POSITIONS_DEUX = [
+  { cle: 'av', nom: 'AV', libelle: 'Roue avant',   essieu: 'av' },
+  { cle: 'ar', nom: 'AR', libelle: 'Roue arrière', essieu: 'ar' },
+];
+
+function positionsVehicule() {
+  return (etat.vehicule && Number(etat.vehicule.roues) === 2) ? POSITIONS_DEUX : POSITIONS_QUATRE;
+}
+
 const USURE_NEUF = 8;      // mm de gomme sur un pneu neuf
 const USURE_LIMITE = 1.6;  // limite légale
 const PRESSION_DEFAUT = 2.4;
 
+/* Les pressions recommandées appartiennent au véhicule, pas à l'application :
+   une moto et un break n'ont rien à voir. */
 function pressionCible(essieu) {
-  const v = Number(etat.reglages[essieu === 'av' ? 'pressionAv' : 'pressionAr']);
+  const v = etat.vehicule ? Number(etat.vehicule[essieu === 'av' ? 'pressionAv' : 'pressionAr']) : 0;
   return v > 0 ? v : PRESSION_DEFAUT;
 }
 
 function dernierPneu(cle) {
   let trouve = null;
-  for (const p of etat.pneus) {
+  for (const p of lesPneus()) {
     if (!p || p.position !== cle) continue;
     if (!trouve || p.date >= trouve.date) trouve = p;   // à date égale, la dernière saisie gagne
   }
@@ -217,7 +228,7 @@ function joursDepuis(iso) {
 }
 
 function aDesDonnees() {
-  return etat.interventions.length > 0 || etat.releves.length > 0;
+  return lesInterventions().length > 0 || lesReleves().length > 0;
 }
 
 /* La question ne se pose qu'une fois par semaine si on l'a repoussée : mieux
@@ -259,7 +270,7 @@ function ajouterJours(date, n) {
 
 /* La sauvegarde vieillit comme une échéance : elle en prend la forme. */
 function alerteSauvegarde() {
-  if (!aDesDonnees() || etat.interventions.length < 3) return [];
+  if (!aDesDonnees() || lesInterventions().length < 3) return [];
   const dernier = etat.reglages.dernierExport;
   const jours = dernier ? joursDepuis(dernier) : null;
   if (jours !== null && jours < EXPORT_APRES_JOURS) return [];
