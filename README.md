@@ -4,6 +4,12 @@ Application web pour téléphone qui suit l'entretien d'une voiture : ce qui a �
 fait, ce que ça a coûté, et surtout ce qui arrive à échéance. Elle fonctionne
 sans réseau, sans compte et sans serveur.
 
+Le champ **Nom du garage** propose les garages déjà connus au fur et à mesure de
+la frappe, la partie saisie surlignée, et se tait dès que rien ne correspond —
+c'est alors un nouveau garage. La liste est construite par l'application plutôt
+que par un `<datalist>` natif, dont le rendu et le filtrage varient trop d'un
+navigateur mobile à l'autre.
+
 Dans la liste des véhicules, chaque ligne porte deux actions : l'appui choisit
 le véhicule à suivre, le bouton à droite ouvre ses actions — le suivre, modifier
 sa fiche, le supprimer — sans avoir à basculer dessus au préalable. Supprimer un

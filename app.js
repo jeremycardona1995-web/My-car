@@ -194,6 +194,9 @@ function intervenants() {
       if (i.parQui === 'pro') proSansNom++; else indetermines++;
       continue;
     }
+    // Une entrée qui aurait échappé à la migration garde « Moi » comme nom :
+    // ce n'est pas un garage, et cela n'a rien à faire dans les suggestions.
+    if (MOTS_MOI.includes(sansAccents(brut).replace(/\s+/g, ' '))) { parMoi++; continue; }
     const cle = sansAccents(brut);
     const g = groupes.get(cle) || { cle, formes: new Map(), nombre: 0, total: 0, derniere: '' };
     g.formes.set(brut, (g.formes.get(brut) || 0) + 1);
@@ -968,6 +971,50 @@ function bouton(libelle, options) {
   });
 }
 
+/* Suggestions maison : le <datalist> natif se rend différemment sur chaque
+   navigateur mobile — ici il faut appuyer sur un chevron au lieu de filtrer à la
+   frappe. On garde la main dessus. */
+function brancherSuggestions(entree, obtenirValeurs) {
+  const liste = el('div', { classe: 'suggestions', hidden: true });
+  entree.insertAdjacentElement('afterend', liste);
+
+  const fermer = () => { liste.hidden = true; liste.textContent = ''; };
+
+  const proposer = () => {
+    const saisi = sansAccents(entree.value.trim());
+    const mots = saisi ? [saisi] : [];
+    const trouvees = obtenirValeurs()
+      .filter(v => {
+        const plat = sansAccents(v);
+        return plat.includes(saisi) && plat !== saisi;   // déjà tapé en entier : plus rien à proposer
+      })
+      .slice(0, 6);
+
+    liste.textContent = '';
+    if (!trouvees.length) { fermer(); return; }
+
+    for (const v of trouvees) {
+      const ligne = el('button', { classe: 'suggestion', type: 'button' }, [texteSurligne(v, mots)]);
+      // pointerdown plutôt que click : sans cela le champ perd le focus et la
+      // liste disparaît avant que l'appui n'aboutisse.
+      ligne.addEventListener('pointerdown', ev => {
+        ev.preventDefault();
+        entree.value = v;
+        fermer();
+        entree.blur();
+        vibrer(8);
+      });
+      liste.appendChild(ligne);
+    }
+    liste.hidden = false;
+  };
+
+  entree.addEventListener('input', proposer);
+  entree.addEventListener('focus', proposer);
+  entree.addEventListener('blur', () => setTimeout(fermer, 150));
+  return { proposer, fermer };
+}
+
 function champ(id, libelle, attrs, aide) {
   const entree = el(attrs && attrs.balise === 'textarea' ? 'textarea' : (attrs && attrs.balise === 'select' ? 'select' : 'input'),
     Object.assign({ id }, attrs, { balise: null }));
@@ -1087,13 +1134,11 @@ function ouvrirIntervention(idExistant, reglePrecochee) {
   });
 
   const cGarage = champ('iLieu', 'Nom du garage', {
-    type: 'text', autocomplete: 'off', placeholder: 'Garage Untel',
-    list: 'listeIntervenants',
+    type: 'text', autocomplete: 'off', autocapitalize: 'words',
+    enterkeyhint: 'next', placeholder: 'Garage Untel',
     value: existant ? (existant.lieu || '') : '',
   });
-  const suggestions = $('#listeIntervenants');
-  suggestions.textContent = '';
-  for (const g of intervenants().garages) suggestions.appendChild(el('option', { value: g.libelle }));
+  brancherSuggestions(cGarage.entree, () => intervenants().garages.map(g => g.libelle));
 
   let parQui = existant ? (existant.parQui || '') : '';
   const puceMoi = el('button', { classe: 'puce', type: 'button', texte: 'Moi' });

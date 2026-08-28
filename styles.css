@@ -454,3 +454,17 @@ mark {
 }
 .ligne-actions svg { width: 20px; height: 20px; fill: var(--attenue); }
 .ligne-actions:active { background: var(--surface-2); }
+
+/* Suggestions sous un champ : dans le flux, pour rester visibles quand le
+   clavier occupe la moitié de l'écran. */
+.suggestions {
+  margin-top: 8px; border-radius: 13px; overflow: hidden;
+  background: var(--surface-2);
+  box-shadow: inset 0 0 0 1px var(--bordure);
+}
+.suggestion {
+  display: block; width: 100%; min-height: 48px;
+  padding: 13px 15px; text-align: left; font-size: 15.5px;
+}
+.suggestion + .suggestion { box-shadow: inset 0 1px 0 var(--bordure); }
+.suggestion:active { background: var(--bordure); }
