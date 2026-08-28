@@ -655,27 +655,32 @@ function ouvrirQuatrePressions() {
 }
 
 function ouvrirPressionsCible() {
+  const v = etat.vehicule;
+  if (!v) { toast('Ajoute d\'abord un véhicule'); return; }
+
   const cAv = champ('cAv', 'Avant (bar)', { type: 'text', inputmode: 'decimal',
     value: pressionTexte(pressionCible('av')) });
   const cAr = champ('cAr', 'Arrière (bar)', { type: 'text', inputmode: 'decimal',
     value: pressionTexte(pressionCible('ar')) });
 
-  ouvrirFeuille('Pressions recommandées', 'Relève-les sur l’étiquette de la portière conducteur.', [
-    el('div', { classe: 'champ-duo' }, [cAv.bloc, cAr.bloc]),
-    bouton('Enregistrer', {
-      principal: true,
-      action: () => {
-        const av = nombreSaisi(cAv.entree.value), ar = nombreSaisi(cAr.entree.value);
-        if (av < 1 || av > 4 || ar < 1 || ar > 4) { toast('Valeurs peu vraisemblables'); return; }
-        etat.reglages.pressionAv = av;
-        etat.reglages.pressionAr = ar;
-        enregistrer('reglages');
-        fermerFeuille();
-        rendreTout();
-        toast('Pressions enregistrées');
-      },
-    }),
-  ]);
+  ouvrirFeuille('Pressions recommandées',
+    'Pour ' + nomVehicule(v) + '. Sur l\'étiquette de la portière ou du bras oscillant.', [
+      el('div', { classe: 'champ-duo' }, [cAv.bloc, cAr.bloc]),
+      bouton('Enregistrer', {
+        principal: true,
+        action: () => {
+          const av = nombreSaisi(cAv.entree.value), ar = nombreSaisi(cAr.entree.value);
+          if (av < 1 || av > 4 || ar < 1 || ar > 4) { toast('Valeurs peu vraisemblables'); return; }
+          // Les pressions appartiennent au véhicule : c'est là que pressionCible() les lit.
+          v.pressionAv = av;
+          v.pressionAr = ar;
+          enregistrer('vehicules');
+          fermerFeuille();
+          rendreTout();
+          toast('Pressions enregistrées');
+        },
+      }),
+    ]);
 }
 
 /* Les pneus produisent leurs propres alertes, sans passer par une règle
@@ -1212,37 +1217,26 @@ function ouvrirFiche() {
   puceDeux.addEventListener('click', () => { roues = 2; majRoues(); vibrer(8); });
   majRoues();
 
-  const cAv = champ('v-pav', 'Pression avant', { type: 'text', inputmode: 'decimal',
-    placeholder: '2,4', value: v.pressionAv ? pressionTexte(v.pressionAv) : '' });
-  const cAr = champ('v-par', 'Pression arrière', { type: 'text', inputmode: 'decimal',
-    placeholder: '2,4', value: v.pressionAr ? pressionTexte(v.pressionAr) : '' });
-
-  const actions = [
-    bouton('Enregistrer', {
-      principal: true,
-      action: () => {
-        for (const c of champs) v[c.cle] = c.entree.value.trim();
-        v.roues = roues;
-        v.pressionAv = nombreSaisi(cAv.entree.value);
-        v.pressionAr = nombreSaisi(cAr.entree.value);
-        enregistrer('vehicules');
-        fermerFeuille();
-        rendreTout();
-        toast('Fiche enregistrée');
-      },
-    }),
-  ];
-  actions.push(bouton('Supprimer ce véhicule', { danger: true, action: () => confirmerSuppressionVehicule(v) }));
-
+  // Les pressions se règlent dans l'onglet Pneus, la suppression depuis la liste
+  // des véhicules : la fiche ne porte que l'identité du véhicule.
   ouvrirFeuille(nomVehicule(v), 'Ces informations restent sur ce téléphone.',
     champs.map(c => c.bloc).concat([
       el('div', { classe: 'champ' }, [
         el('label', { texte: 'Nombre de roues' }),
         el('div', { classe: 'puces' }, [puceQuatre, puceDeux]),
       ]),
-      el('div', { classe: 'champ-duo' }, [cAv.bloc, cAr.bloc]),
-      el('p', { classe: 'aide', texte: "Pressions recommandées, sur l'étiquette de la portière ou du bras oscillant." }),
-    ]).concat(actions));
+      bouton('Enregistrer', {
+        principal: true,
+        action: () => {
+          for (const c of champs) v[c.cle] = c.entree.value.trim();
+          v.roues = roues;
+          enregistrer('vehicules');
+          fermerFeuille();
+          rendreTout();
+          toast('Fiche enregistrée');
+        },
+      }),
+    ]));
 }
 
 /* ─────────────── Plusieurs véhicules ─────────────── */
