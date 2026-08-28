@@ -874,6 +874,18 @@ function rendreListeRegles() {
 
 /* ─────────────── Feuilles ─────────────── */
 
+/* Une fermeture est différée le temps de son animation. Si une nouvelle feuille
+   s'ouvre entre-temps — « Modifier » enchaîne sur un formulaire —, il faut
+   annuler cette fermeture, sinon elle emporte la feuille qui vient d'arriver. */
+let fermetureEnCours = null;
+
+function annulerFermeture() {
+  if (!fermetureEnCours) return;
+  const annuler = fermetureEnCours;
+  fermetureEnCours = null;
+  annuler();
+}
+
 /* Un seul endroit pour savoir si l'on a le droit d'animer. */
 function mouvementReduit() {
   try {
@@ -884,6 +896,7 @@ function mouvementReduit() {
 }
 
 function ouvrirFeuille(titre, sousTitre, contenu) {
+  annulerFermeture();
   const f = $('#feuilleGenerique');
   const enchainement = f.open;
   const zone = $('#feuilleContenu');
@@ -912,12 +925,19 @@ function fermerFeuille() {
   const f = $('#feuilleGenerique');
   if (!f.open || f.classList.contains('ferme')) return;
 
-  if (mouvementReduit()) { f.close(); return; }
+  if (mouvementReduit()) {
+    f.style.transform = '';
+    f.style.removeProperty('--voile');
+    f.close();
+    return;
+  }
 
   let fait = false;
   const achever = () => {
     if (fait) return;
     fait = true;
+    fermetureEnCours = null;
+    clearTimeout(minuterie);
     f.removeEventListener('animationend', surFin);
     f.classList.remove('ferme');
     f.style.transform = '';
@@ -929,8 +949,15 @@ function fermerFeuille() {
   const surFin = ev => { if (ev.target === f) achever(); };
 
   f.addEventListener('animationend', surFin);
-  setTimeout(achever, 320);
+  const minuterie = setTimeout(achever, 320);
   f.classList.add('ferme');
+
+  fermetureEnCours = () => {
+    fait = true;
+    clearTimeout(minuterie);
+    f.removeEventListener('animationend', surFin);
+    f.classList.remove('ferme');
+  };
 }
 
 function bouton(libelle, options) {
@@ -963,7 +990,7 @@ function ouvrirEcheance(e) {
   ouvrirFeuille(e.regle.libelle, dernier + (e.fait ? ' — ' + e.texte : ''), [
     bouton('C\'est fait', {
       principal: true,
-      action: () => { fermerFeuille(); ouvrirIntervention(null, e.regle); },
+      action: () => ouvrirIntervention(null, e.regle),
     }),
     bouton('Me le rappeler dans 1 mois', {
       action: () => {
@@ -1217,7 +1244,7 @@ function ouvrirDetailIntervention(id) {
   }
   actions.push(bouton('Modifier', {
     principal: i.categorie !== 'panne' || !!i.resolueLe,
-    action: () => { fermerFeuille(); ouvrirIntervention(i.id); },
+    action: () => ouvrirIntervention(i.id),
   }));
   actions.push(bouton('Supprimer', { danger: true, action: () => confirmerSuppression(i) }));
 
@@ -1345,7 +1372,7 @@ function ouvrirVehicules() {
       etat.vehicules.length ? carte : null,
       bouton('Ajouter un véhicule', { principal: true, action: ouvrirNouveauVehicule }),
       etat.vehicule ? bouton('Modifier « ' + nomVehicule(etat.vehicule) + ' »',
-        { action: () => { fermerFeuille(); setTimeout(ouvrirFiche, 60); } }) : null,
+        { action: ouvrirFiche }) : null,
     ]);
 }
 
@@ -1569,9 +1596,23 @@ function fermerFeuilleDepuis(decalage) {
     { duration: Math.max(110, Math.round(190 * reste)), easing: 'cubic-bezier(.4,0,.9,.5)', fill: 'forwards' });
 
   let fait = false;
-  const fin = () => { if (fait) return; fait = true; animation.cancel(); achever(); };
+  const fin = () => {
+    if (fait) return;
+    fait = true;
+    fermetureEnCours = null;
+    clearTimeout(minuterie);
+    animation.cancel();
+    achever();
+  };
   animation.onfinish = fin;
-  setTimeout(fin, 320);
+  const minuterie = setTimeout(fin, 320);
+
+  fermetureEnCours = () => {
+    fait = true;
+    clearTimeout(minuterie);
+    animation.cancel();
+    f.classList.remove('ferme');
+  };
 }
 
 function brancherGlissementFeuille() {
