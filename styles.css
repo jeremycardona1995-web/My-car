@@ -402,3 +402,17 @@ mark {
 }
 .entete-vehicule:active { background: var(--surface); }
 .chevron-bas { width: 15px; height: 15px; flex: none; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+
+/* Une ligne de véhicule porte deux actions : choisir, et agir. */
+.ligne-vehicule { padding: 0 4px 0 0; gap: 0; }
+.ligne-choix {
+  flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px;
+  min-height: 60px; padding: 12px 4px 12px 16px; text-align: left;
+}
+.ligne-choix:active { background: var(--surface-2); }
+.ligne-actions {
+  flex: none; width: 44px; height: 44px; border-radius: 50%;
+  display: grid; place-items: center;
+}
+.ligne-actions svg { width: 20px; height: 20px; fill: var(--attenue); }
+.ligne-actions:active { background: var(--surface-2); }

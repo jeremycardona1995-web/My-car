@@ -4,6 +4,12 @@ Application web pour téléphone qui suit l'entretien d'une voiture : ce qui a �
 fait, ce que ça a coûté, et surtout ce qui arrive à échéance. Elle fonctionne
 sans réseau, sans compte et sans serveur.
 
+Dans la liste des véhicules, chaque ligne porte deux actions : l'appui choisit
+le véhicule à suivre, le bouton à droite ouvre ses actions — le suivre, modifier
+sa fiche, le supprimer — sans avoir à basculer dessus au préalable. Supprimer un
+véhicule n'emporte que son propre historique ; le dernier véhicule peut être
+supprimé lui aussi, l'application repartant alors vide.
+
 L'application suit **plusieurs véhicules**. Chacun a son carnet, ses relevés,
 ses postes suivis et ses pneus ; le nom affiché en haut de l'écran du jour sert
 de sélecteur. Un véhicule déclare son nombre de roues — deux ou quatre —, ce qui

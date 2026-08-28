@@ -1232,9 +1232,7 @@ function ouvrirFiche() {
       },
     }),
   ];
-  if (etat.vehicules.length > 1) {
-    actions.push(bouton('Supprimer ce véhicule', { danger: true, action: () => confirmerSuppressionVehicule(v) }));
-  }
+  actions.push(bouton('Supprimer ce véhicule', { danger: true, action: () => confirmerSuppressionVehicule(v) }));
 
   ouvrirFeuille(nomVehicule(v), 'Ces informations restent sur ce téléphone.',
     champs.map(c => c.bloc).concat([
@@ -1258,8 +1256,11 @@ function ouvrirVehicules() {
   for (const v of etat.vehicules) {
     const actif = etat.vehicule && v.id === etat.vehicule.id;
     const nb = compterPour(v.id);
-    carte.appendChild(el('button', {
-      classe: 'ligne ligne-bouton', type: 'button',
+
+    // Deux boutons côte à côte : un bouton dans un bouton n'existe pas en HTML,
+    // et il faut pouvoir agir sur un véhicule sans avoir à basculer dessus.
+    const choisir = el('button', {
+      classe: 'ligne-choix', type: 'button',
       sur: {
         click: () => {
           activerVehicule(v.id);
@@ -1279,7 +1280,17 @@ function ouvrirVehicules() {
             Number(v.roues) === 2 ? '2 roues' : null].filter(Boolean).join(' · ') }),
       ]),
       el('span', { classe: 'ligne-detail', texte: actif ? '✓' : '' }),
-    ]));
+    ]);
+
+    const actions = el('button', {
+      classe: 'ligne-actions', type: 'button',
+      'aria-label': 'Actions sur ' + nomVehicule(v),
+      sur: { click: () => ouvrirActionsVehicule(v) },
+    });
+    actions.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true">'
+      + '<circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg>';
+
+    carte.appendChild(el('div', { classe: 'ligne ligne-vehicule' }, [choisir, actions]));
   }
 
   ouvrirFeuille('Mes véhicules',
@@ -1289,6 +1300,41 @@ function ouvrirVehicules() {
       bouton('Ajouter un véhicule', { principal: true, action: ouvrirNouveauVehicule }),
       etat.vehicule ? bouton('Modifier « ' + nomVehicule(etat.vehicule) + ' »',
         { action: () => { fermerFeuille(); setTimeout(ouvrirFiche, 60); } }) : null,
+    ]);
+}
+
+/* Agir sur un véhicule sans l'activer : sinon supprimer la moto obligerait à
+   basculer dessus, aller dans Voiture, ouvrir la fiche, puis supprimer. */
+function ouvrirActionsVehicule(v) {
+  const nb = compterPour(v.id);
+  const actif = etat.vehicule && v.id === etat.vehicule.id;
+
+  ouvrirFeuille(nomVehicule(v),
+    [v.immat || null, nb + (nb > 1 ? ' interventions' : ' intervention'),
+      Number(v.roues) === 2 ? '2 roues' : '4 roues'].filter(Boolean).join(' · '), [
+      actif ? null : bouton('Suivre ce véhicule', {
+        principal: true,
+        action: () => {
+          activerVehicule(v.id);
+          fusionnerRegles();
+          fermerFeuille();
+          rendreFiltres();
+          rendreTout();
+          allerA('Aujourdhui');
+          toast(nomVehicule(v));
+        },
+      }),
+      bouton('Modifier la fiche', {
+        principal: actif,
+        action: () => {
+          activerVehicule(v.id);
+          fusionnerRegles();
+          rendreTout();
+          ouvrirFiche();
+        },
+      }),
+      bouton('Supprimer ce véhicule', { danger: true, action: () => confirmerSuppressionVehicule(v) }),
+      bouton('Retour', { action: ouvrirVehicules }),
     ]);
 }
 
@@ -1356,9 +1402,15 @@ function ouvrirNouveauVehicule() {
 
 function confirmerSuppressionVehicule(v) {
   const nb = compterPour(v.id);
+  const dernier = etat.vehicules.length <= 1;
+  const perte = nb
+    ? nb + (nb > 1 ? ' interventions seront perdues' : ' intervention sera perdue')
+      + ', avec les relevés et les pneus.'
+    : 'Ce véhicule n\'a aucune intervention enregistrée.';
+
   ouvrirFeuille('Supprimer ' + nomVehicule(v) + ' ?',
-    nb + (nb > 1 ? ' interventions seront perdues' : ' intervention sera perdue')
-      + ", avec les relevés et les pneus. Exporte d'abord si tu hésites.", [
+    perte + (dernier ? ' C\'est ton dernier véhicule : l\'application repartira vide.' : '')
+      + (nb ? " Exporte d'abord si tu hésites." : ''), [
       bouton('Supprimer définitivement', {
         danger: true,
         action: () => {
