@@ -115,6 +115,13 @@ libellé.
 L'export JSON contient les six clés sans exception, plus un numéro de version
 de format.
 
+*Voiture → Dicter à une IA* copie en une fois le format de réponse attendu, la
+fiche du véhicule et **le carnet lui-même** — compteur, échéances, état des
+pneus, historique des soixante dernières interventions. Rien à exporter ni à
+aller chercher ailleurs : passer d'une application à l'autre pour y déposer un
+fichier fait perdre le message en cours de rédaction. Un second bouton copie le
+prompt seul, sans le carnet.
+
 L'import accepte aussi un **fragment** : un objet portant `"mode":"ajout"`, ou
 dépourvu de véhicule et de règles, complète le carnet au lieu de le remplacer.
 Un identifiant déjà présent est ignoré, si bien qu'un même fragment importé deux

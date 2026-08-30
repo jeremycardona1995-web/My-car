@@ -1646,7 +1646,63 @@ function confirmerSuppressionVehicule(v) {
    l'application : sans cela, l'IA invente des catégories et des postes que
    l'import devrait deviner. Ni immatriculation ni numéro de série : ils ne
    servent à rien pour un diagnostic. */
-function construirePrompt() {
+/* Le carnet dans le prompt plutôt que dans un fichier : aller chercher un CSV
+   dans une autre application fait perdre le message en cours de rédaction. Un
+   seul copier-coller, aucun aller-retour. */
+function resumeCarnetPourIA() {
+  const lignes = [];
+  const actuel = kilometrageActuel();
+  const dernier = dernierReleve();
+
+  lignes.push('Compteur : ' + (actuel.km !== null
+    ? nombreKm(actuel.km) + ' km' + (actuel.estime ? ' (estimé ; dernier relevé réel : '
+      + nombreKm(dernier.km) + ' km le ' + dernier.date + ')' : ' relevé le ' + dernier.date)
+    : 'jamais relevé'));
+
+  const echeances = calculerEcheances();
+  const dire = (titre, liste) => {
+    if (!liste.length) return;
+    lignes.push(titre + ' : ' + liste.map(e => e.regle.libelle + ' (' + e.texte + ')').join(' ; '));
+  };
+  dire('En retard', echeances.filter(e => e.statut === 'retard'));
+  dire('Bientôt', echeances.filter(e => e.statut === 'proche'));
+  const jamais = echeances.filter(e => e.statut === 'inconnu').map(e => e.regle.libelle);
+  if (jamais.length) lignes.push('Jamais renseigné : ' + jamais.join(', '));
+
+  const pneus = positionsVehicule().map(etatPneu).filter(e => e.pression || e.usure);
+  if (pneus.length) {
+    lignes.push('Pneus : ' + pneus.map(e => {
+      const perte = perteMensuelle(e.position.cle);
+      return e.position.nom + ' '
+        + (e.pression ? pressionTexte(e.pression, ' bar') : 'pression inconnue')
+        + (e.usure ? ', ' + nombreDecimal(e.usure, ' mm de gomme') : '')
+        + (perte ? ', perd ' + pressionTexte(perte.parMois) + ' bar/mois' : '');
+    }).join(' ; '));
+  }
+
+  const toutes = lesInterventions().slice()
+    .sort((a, b) => a.date < b.date ? 1 : a.date > b.date ? -1 : 0);
+  const retenues = toutes.slice(0, 60);
+  lignes.push('');
+  lignes.push('Historique' + (toutes.length > retenues.length
+    ? ' (les ' + retenues.length + ' plus récentes sur ' + toutes.length + ')' : '') + ' :');
+
+  for (const i of retenues) {
+    const postes = (i.postes || [])
+      .map(c => (lesRegles().find(r => r.cle === c) || {}).libelle)
+      .filter(Boolean);
+    lignes.push('- ' + i.date + ' · ' + (i.titre || '')
+      + ' · ' + categorie(i.categorie).libelle
+      + (i.km > 0 ? ' · ' + i.km + ' km' : '')
+      + (i.coutTotal ? ' · ' + i.coutTotal + ' €' : '')
+      + (auteur(i) ? ' · ' + auteur(i) : '')
+      + (postes.length ? ' · postes : ' + postes.join(', ') : '')
+      + (i.notes ? ' — ' + i.notes : ''));
+  }
+  return lignes.join('\n');
+}
+
+function construirePrompt(avecCarnet) {
   const v = etat.vehicule || {};
   const actuel = kilometrageActuel();
   const postes = lesRegles().map(r => r.cle).join(', ');
@@ -1682,18 +1738,34 @@ function construirePrompt() {
     '- Plusieurs interventions dans un même récit donnent plusieurs objets.',
     '',
     'Ma voiture : ' + identite + '.',
-    '',
-    'Voici ma demande : ',
-  ].join('\n');
+  ].concat(avecCarnet
+    ? ['', 'Voici son carnet, pour que tu saches ce qui a déjà été fait :', '', resumeCarnetPourIA()]
+    : [])
+   .concat(['', 'Voici ma demande : '])
+   .join('\n');
 }
 
 function ouvrirImportIA() {
-  ouvrirFeuille('Dicter à une IA', 'Copie ce prompt, colle-le dans l\'IA de ton choix, décris ce que tu as fait ou ce qui ne va pas, puis rapporte sa réponse ici.', [
-    bouton('Copier le prompt', { principal: true, action: () => copierTexte(construirePrompt(), 'Prompt copié') }),
-    bouton('Coller la réponse', { action: ouvrirCollage }),
-    bouton('Voir le prompt', { action: () => afficherTexteBrut(construirePrompt()) }),
-    el('p', { classe: 'aide', texte: 'Le prompt contient la marque, le modèle, l\'année et le kilométrage. Ni immatriculation, ni numéro de série.' }),
-  ]);
+  const avecCarnet = construirePrompt(true);
+  const seul = construirePrompt(false);
+  const taille = Math.round(avecCarnet.length / 100) * 100;
+
+  ouvrirFeuille('Dicter à une IA',
+    'Copie, colle dans l\'IA de ton choix, écris ta demande à la suite, puis rapporte sa réponse ici.', [
+      bouton('Copier avec mon carnet', {
+        principal: true,
+        action: () => copierTexte(avecCarnet, 'Copié — colle et écris ta demande'),
+      }),
+      el('p', { classe: 'aide', texte: 'Tout part en une seule fois : rien à exporter, aucun fichier à '
+        + 'aller chercher, donc aucun risque de perdre le message que tu es en train d\'écrire. '
+        + 'Environ ' + nombreKm(taille) + ' caractères, '
+        + lesInterventions().length + ' interventions.' }),
+      bouton('Copier sans le carnet', { action: () => copierTexte(seul, 'Prompt copié') }),
+      bouton('Coller la réponse', { action: ouvrirCollage }),
+      bouton('Voir le texte', { action: () => afficherTexteBrut(avecCarnet) }),
+      el('p', { classe: 'aide', texte: 'Le texte contient la marque, le modèle, l\'année, le kilométrage, '
+        + 'et — avec le carnet — les garages, les montants et les dates. Ni immatriculation, ni numéro de série.' }),
+    ]);
 }
 
 async function copierTexte(texte, message) {
