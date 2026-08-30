@@ -471,3 +471,13 @@ mark {
 
 .pneu-ligne-detail.alerte { color: var(--danger); }
 .pneu-ligne-detail.attention { color: var(--accent); }
+
+/* Les notes d'un diagnostic tiennent en plusieurs paragraphes : on garde les
+   retours à la ligne et on laisse le texte sélectionnable. */
+.notes {
+  margin: 0 0 6px; padding: 14px 16px;
+  background: var(--surface-2); border-radius: 13px;
+  font-size: 15px; line-height: 1.55;
+  white-space: pre-wrap; overflow-wrap: anywhere;
+  user-select: text; -webkit-user-select: text;
+}

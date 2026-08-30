@@ -1360,7 +1360,6 @@ function ouvrirDetailIntervention(id) {
     postes.length ? el('li', null, [el('span', { texte: 'Postes' }), el('span', { texte: postes.join(', ') })]) : null,
     i.categorie === 'panne' ? el('li', null, [el('span', { texte: 'État' }),
       el('span', { texte: i.resolueLe ? 'résolue' : 'en cours' })]) : null,
-    i.notes ? el('li', null, [el('span', { texte: 'Notes' }), el('span', { texte: i.notes })]) : null,
   ]);
 
   const actions = [lignes];
@@ -1387,6 +1386,13 @@ function ouvrirDetailIntervention(id) {
     action: () => ouvrirIntervention(i.id),
   }));
   actions.push(bouton('Supprimer', { danger: true, action: () => confirmerSuppression(i) }));
+
+  // Les actions passent devant les notes : un diagnostic de deux mille caractères
+  // ne doit pas séparer l'utilisateur du bouton « Marquer comme résolue ».
+  if (i.notes) {
+    actions.push(el('h3', { classe: 'titre-section', texte: 'Notes' }));
+    actions.push(el('p', { classe: 'notes', texte: i.notes }));
+  }
 
   ouvrirFeuille(i.titre || cat.libelle, i.resolueLe ? 'Résolue le ' + dateCourte(i.resolueLe) : null, actions);
 }
@@ -1720,7 +1726,7 @@ function construirePrompt(avecCarnet) {
     '',
     '{"application":"carnet-entretien","mode":"ajout","interventions":[{',
     '  "date":"AAAA-MM-JJ", "titre":"court, en français",',
-    '  "categorie":' + cats + ',',
+    '  "categorie": une seule valeur parmi ' + cats + ',',
     '  "km":entier, "coutTotal":nombre, "resteACharge":nombre,',
     '  "parQui":"moi" ou "pro", "lieu":"nom du garage, vide si c\'est moi",',
     '  "notes":"détails, hypothèses, pièces à vérifier",',

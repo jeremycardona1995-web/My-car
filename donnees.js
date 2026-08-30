@@ -4,7 +4,7 @@
 
 'use strict';
 
-const VERSION_APPLI = '2.7.0';
+const VERSION_APPLI = '2.7.1';
 const VERSION_FORMAT = 1;
 const CLES = {
   vehicule: 'vehiculeV1',
@@ -581,7 +581,8 @@ function analyserImport(texte, origine) {
   }));
   actions.push(bouton('Annuler', { action: fermerFeuille }));
 
-  ouvrirFeuille('Importer', nb + ' interventions et ' + nbReleves + ' relevés dans ce fichier.'
+  const compte = (n, mot) => n + ' ' + mot + (n > 1 ? 's' : '');
+  ouvrirFeuille('Importer', compte(nb, 'intervention') + ' et ' + compte(nbReleves, 'relevé') + ' dans ce fichier.'
     + (fragment ? '' : ' Une sauvegarde complète remplace ce que contient l\'application.'), actions);
 }
 
