@@ -481,3 +481,5 @@ mark {
   white-space: pre-wrap; overflow-wrap: anywhere;
   user-select: text; -webkit-user-select: text;
 }
+
+.detail-liste .valeur-alerte { color: var(--danger); font-weight: 600; }

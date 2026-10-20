@@ -1124,12 +1124,59 @@ function champ(id, libelle, attrs, aide) {
 
 /* ── Échéance ── */
 
+/* « 60 mois » à côté de « 7,5 ans » se compare mal : on parle ans contre ans. */
+function moisLisible(mois) {
+  if (mois < 24) return mois + ' mois';
+  const ans = mois / 12;
+  return (Number.isInteger(ans) ? ans : ans.toFixed(1).replace('.', ',')) + ' ans';
+}
+
+/* Les deux critères côte à côte : « dépassé de 4 semaines » seul laisse croire
+   qu'il faut agir tout de suite, alors qu'il peut rester des milliers de
+   kilomètres — et inversement. */
+function detailEcheance(e) {
+  if (!e.fait) return null;
+  const actuel = kilometrageActuel();
+  const lignes = [];
+
+  const ligne = (etiquette, valeur, alerte) => el('li', null, [
+    el('span', { texte: etiquette }),
+    el('span', { classe: alerte ? 'valeur-alerte' : '', texte: valeur }),
+  ]);
+
+  lignes.push(ligne('Dernière fois', dateCourte(e.fait.date)
+    + (e.fait.km ? ' à ' + nombreKm(e.fait.km) + ' km' : '')));
+
+  if (e.regle.intervalleKm > 0) {
+    if (e.fait.km && actuel.km !== null) {
+      const parcourus = actuel.km - e.fait.km;
+      lignes.push(ligne('Kilomètres', nombreKm(parcourus) + ' sur '
+        + nombreKm(e.regle.intervalleKm) + ' km'));
+      lignes.push(ligne(e.resteKm > 0 ? 'Il reste' : 'Dépassé de',
+        nombreKm(Math.abs(e.resteKm)) + ' km', e.resteKm <= 0));
+    } else {
+      lignes.push(ligne('Kilomètres', 'compteur inconnu la dernière fois'));
+    }
+  }
+
+  if (e.regle.intervalleMois > 0 && e.resteJours !== null) {
+    const ecoules = Math.round((aujourdhui().getTime() - versDate(e.fait.date).getTime()) / JOUR);
+    lignes.push(ligne('Temps', dureeLisible(ecoules) + ' sur ' + moisLisible(e.regle.intervalleMois)));
+    lignes.push(ligne(e.resteJours > 0 ? 'Il reste' : 'Dépassé de',
+      dureeLisible(e.resteJours), e.resteJours <= 0));
+    lignes.push(ligne('Échéance', dateCourte(e.dateEcheance)));
+  }
+
+  return el('ul', { classe: 'detail-liste' }, lignes);
+}
+
 function ouvrirEcheance(e) {
   const dernier = e.fait
-    ? 'Dernière fois : ' + dateCourte(e.fait.date) + (e.fait.km ? ' à ' + nombreKm(e.fait.km) + ' km' : '')
+    ? e.texte
     : 'Aucune trace dans le carnet.';
 
-  ouvrirFeuille(e.regle.libelle, dernier + (e.fait ? ' — ' + e.texte : ''), [
+  ouvrirFeuille(e.regle.libelle, dernier, [
+    detailEcheance(e),
     bouton('C\'est fait', {
       principal: true,
       action: () => ouvrirIntervention(null, e.regle),
