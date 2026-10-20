@@ -67,7 +67,11 @@ les remplace à l'usure et non à date fixe.
 
 Cocher un poste dans une intervention relance son compte à rebours. Les
 échéances se calculent sur deux critères, le kilométrage et le temps : la
-contrainte la plus proche l'emporte.
+contrainte la plus proche l'emporte. La feuille d'une échéance détaille les
+deux — distance parcourue sur l'intervalle, temps écoulé, ce qui reste ou ce
+qui est dépassé de chaque côté — car « dépassé de 4 semaines » seul laisse
+croire qu'il faut agir tout de suite alors qu'il peut rester des milliers de
+kilomètres, et inversement.
 
 ## Vie privée
 
